@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import Icon from "@/components/ui/icon";
 
 const AUTH_URL = "https://functions.poehali.dev/e7256c2b-25ee-4d8d-a177-79b9ba10f5b5";
@@ -74,6 +74,7 @@ interface SocialUser {
   job_title: string;
   initials: string;
   is_following: boolean;
+  avatar_url?: string;
 }
 
 interface PostAuthor {
@@ -415,7 +416,7 @@ function CreatePostModal({ userInitials, onClose, onCreated }: { userInitials: s
   const [error, setError] = useState("");
   const [mediaPreview, setMediaPreview] = useState<string>("");
   const [mediaFile, setMediaFile] = useState<File | null>(null);
-  const fileInputRef = { current: null as HTMLInputElement | null };
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   const handleMediaSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -458,7 +459,7 @@ function CreatePostModal({ userInitials, onClose, onCreated }: { userInitials: s
       style={{ background: "rgba(10,15,30,0.7)", backdropFilter: "blur(4px)" }}
       onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
     >
-      <input ref={(el) => { fileInputRef.current = el; }} type="file" accept="image/*,video/*" className="hidden" onChange={handleMediaSelect} />
+      <input ref={fileInputRef} type="file" accept="image/*,video/*" className="hidden" onChange={handleMediaSelect} />
       <div className="w-full max-w-lg rounded-xl p-6 section-enter" style={{ background: "hsl(0,0%,100%)", border: "1px solid hsl(216,20%,88%)" }}>
         <div className="flex items-center justify-between mb-4">
           <h2 className="font-semibold text-base">Новая публикация</h2>
@@ -602,12 +603,13 @@ function ShareModal({ postId, text, onClose }: { postId: number; text: string; o
 }
 
 // ─── UsersListModal ───────────────────────────────────────────────────────────
-function UsersListModal({ title, users, onClose, onFollowToggle, onOpenProfile }: {
+function UsersListModal({ title, users, onClose, onFollowToggle, onOpenProfile, onStartChat }: {
   title: string;
   users: { id: number; full_name: string; job_title: string; avatar_url: string; initials: string; is_following?: boolean }[];
   onClose: () => void;
   onFollowToggle?: (uid: number, following: boolean) => void;
   onOpenProfile?: (uid: number) => void;
+  onStartChat?: (uid: number) => void;
 }) {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: "rgba(0,0,0,0.6)" }} onClick={onClose}>
@@ -627,18 +629,26 @@ function UsersListModal({ title, users, onClose, onFollowToggle, onOpenProfile }
                 <div className="font-medium text-sm truncate">{u.full_name}</div>
                 <div className="text-xs truncate" style={{ color: "hsl(220,15%,55%)" }}>{u.job_title || "Участник"}</div>
               </div>
-              {onFollowToggle && (
-                <button className={u.is_following ? "btn-outline text-xs px-3 py-1" : "btn-primary text-xs px-3 py-1"}
-                  onClick={async (e) => {
-                    e.stopPropagation();
-                    const action = u.is_following ? "unfollow" : "follow";
-                    const r = await apiPost(SOCIAL_URL, { action, user_id: u.id });
-                    if (r.ok) onFollowToggle(u.id, !u.is_following);
-                  }}>
-                  {u.is_following ? "Подписан" : "+"}
-                </button>
-              )}
-              {onOpenProfile && <Icon name="ChevronRight" size={14} style={{ color: "hsl(220,15%,65%)" }} />}
+              <div className="flex gap-1.5 flex-shrink-0" onClick={(e) => e.stopPropagation()}>
+                {onStartChat && (
+                  <button className="btn-outline text-xs p-1.5" title="Написать"
+                    onClick={() => { onStartChat(u.id); onClose(); }}>
+                    <Icon name="MessageSquare" size={13} />
+                  </button>
+                )}
+                {onFollowToggle && (
+                  <button className={u.is_following ? "btn-outline text-xs px-2 py-1" : "btn-primary text-xs px-2 py-1"}
+                    onClick={async (e) => {
+                      e.stopPropagation();
+                      const action = u.is_following ? "unfollow" : "follow";
+                      const r = await apiPost(SOCIAL_URL, { action, user_id: u.id });
+                      if (r.ok) onFollowToggle(u.id, !u.is_following);
+                    }}>
+                    {u.is_following ? "✓" : "+"}
+                  </button>
+                )}
+                {onOpenProfile && <Icon name="ChevronRight" size={14} style={{ color: "hsl(220,15%,65%)" }} />}
+              </div>
             </div>
           ))}
         </div>
@@ -729,7 +739,8 @@ function UserProfilePage({ userId, currentUser, onBack, onOpenChat, onOpenProfil
         <UsersListModal title={followersModal === "followers" ? "Подписчики" : "Подписки"} users={followUsers}
           onClose={() => setFollowersModal(null)}
           onFollowToggle={(uid, f) => setFollowUsers((prev) => prev.map((u) => u.id === uid ? { ...u, is_following: f } : u))}
-          onOpenProfile={onOpenProfile} />
+          onOpenProfile={onOpenProfile}
+          onStartChat={onOpenChat} />
       )}
 
       <button className="flex items-center gap-2 text-sm mb-4" style={{ color: "hsl(213,80%,40%)" }} onClick={onBack}>
@@ -784,16 +795,16 @@ function UserProfilePage({ userId, currentUser, onBack, onOpenChat, onOpenProfil
           )}
 
           {/* Stats */}
-          <div className="grid grid-cols-4 gap-3 pt-3 border-t" style={{ borderColor: "hsl(216,20%,90%)" }}>
+          <div className="grid grid-cols-4 gap-1 pt-3 border-t" style={{ borderColor: "hsl(216,20%,90%)" }}>
             {[
               { label: "Подписчиков", value: followersCount, click: () => openFollowModal("followers") },
               { label: "Подписок", value: profile.stats.following, click: () => openFollowModal("following") },
               { label: "Постов", value: profile.stats.posts, click: undefined },
               { label: "Просмотров", value: profile.stats.views, click: undefined },
             ].map((s, i) => (
-              <button key={s.label} className="text-center py-1 rounded-lg hover:bg-gray-50 transition-colors" onClick={s.click}>
-                <div className="font-bold text-lg" style={{ color: "hsl(221,65%,22%)" }}>{s.value.toLocaleString("ru")}</div>
-                <div className="text-xs" style={{ color: i < 2 ? "hsl(213,80%,40%)" : "hsl(220,15%,55%)" }}>{s.label}</div>
+              <button key={s.label} className="text-center py-1 px-1 rounded-lg hover:bg-gray-50 transition-colors" onClick={s.click}>
+                <div className="font-bold text-base leading-tight" style={{ color: "hsl(221,65%,22%)" }}>{s.value.toLocaleString("ru")}</div>
+                <div className="leading-tight mt-0.5" style={{ fontSize: "9px", color: i < 2 ? "hsl(213,80%,40%)" : "hsl(220,15%,55%)" }}>{s.label}</div>
               </button>
             ))}
           </div>
@@ -862,7 +873,7 @@ function UserProfilePage({ userId, currentUser, onBack, onOpenChat, onOpenProfil
 
 // ─── Groups Page ──────────────────────────────────────────────────────────────
 interface Group { id: number; name: string; description: string; avatar_url: string; members_count: number; owner_id: number; is_member: boolean; initials: string; }
-interface GroupPost { id: number; text: string; media_url: string; media_type: string; likes_count: number; created_at: string; author: PostAuthor; }
+interface GroupPost { id: number; text: string; media_url: string; media_type: string; likes_count: number; comments_count: number; created_at: string; author: PostAuthor; liked: boolean; is_mine: boolean; }
 
 function GroupDetailPage({ group, currentUser, onBack }: { group: Group; currentUser: User | null; onBack: () => void }) {
   const [posts, setPosts] = useState<GroupPost[]>([]);
@@ -877,13 +888,50 @@ function GroupDetailPage({ group, currentUser, onBack }: { group: Group; current
   const [posting, setPosting] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
   const [mediaViewer, setMediaViewer] = useState<{ url: string; type: string } | null>(null);
-  const fileRef = { current: null as HTMLInputElement | null };
-  const docRef = { current: null as HTMLInputElement | null };
+  const fileRef = useRef<HTMLInputElement | null>(null);
+  const docRef = useRef<HTMLInputElement | null>(null);
+
+  const [openComments, setOpenComments] = useState<number | null>(null);
+  const [comments, setComments] = useState<Record<number, Comment[]>>({});
+  const [commentTexts, setCommentTexts] = useState<Record<number, string>>({});
+  const [sharePostId, setSharePostId] = useState<number | null>(null);
 
   useEffect(() => {
-    apiPost(SOCIAL_URL, { action: "group_posts", group_id: group.id }).then((r) => setPosts((r.data.posts as GroupPost[]) || []));
+    apiPost(SOCIAL_URL, { action: "group_posts_v2", group_id: group.id }).then((r) => setPosts((r.data.posts as GroupPost[]) || []));
     apiPost(SOCIAL_URL, { action: "group_members", group_id: group.id }).then((r) => setMembers((r.data.members as typeof members) || []));
   }, [group.id]);
+
+  const handleLike = async (postId: number) => {
+    const r = await apiPost(SOCIAL_URL, { action: "group_like", post_id: postId });
+    if (r.ok) setPosts((prev) => prev.map((p) => p.id === postId
+      ? { ...p, liked: r.data.liked as boolean, likes_count: r.data.likes_count as number } : p));
+  };
+
+  const handleDelete = async (postId: number) => {
+    if (!confirm("Удалить публикацию?")) return;
+    const r = await apiPost(SOCIAL_URL, { action: "group_post_delete", post_id: postId });
+    if (r.ok) setPosts((prev) => prev.filter((p) => p.id !== postId));
+  };
+
+  const loadComments = async (postId: number) => {
+    if (openComments === postId) { setOpenComments(null); return; }
+    setOpenComments(postId);
+    if (!comments[postId]) {
+      const r = await apiPost(SOCIAL_URL, { action: "group_comments", post_id: postId });
+      setComments((prev) => ({ ...prev, [postId]: (r.data.comments as Comment[]) || [] }));
+    }
+  };
+
+  const sendComment = async (postId: number) => {
+    const text = commentTexts[postId]?.trim();
+    if (!text) return;
+    const r = await apiPost(SOCIAL_URL, { action: "group_comment", post_id: postId, text });
+    if (r.ok) {
+      setComments((prev) => ({ ...prev, [postId]: [...(prev[postId] || []), r.data.comment as Comment] }));
+      setCommentTexts((prev) => ({ ...prev, [postId]: "" }));
+      setPosts((prev) => prev.map((p) => p.id === postId ? { ...p, comments_count: p.comments_count + 1 } : p));
+    }
+  };
 
   const handleJoin = async () => {
     const action = isMember ? "group_leave" : "group_join";
@@ -913,8 +961,8 @@ function GroupDetailPage({ group, currentUser, onBack }: { group: Group; current
   return (
     <div className="max-w-2xl mx-auto px-4 py-4">
       {mediaViewer && <MediaViewer url={mediaViewer.url} type={mediaViewer.type} onClose={() => setMediaViewer(null)} />}
-      <input ref={(el) => { fileRef.current = el; }} type="file" accept="image/*,video/*" className="hidden" onChange={async (e) => { const f = e.target.files?.[0]; if (!f) return; setMediaFile(f); if (f.type.startsWith("image/")) { setMediaPreview(await readFileAsBase64(f)); } else { setMediaPreview("video"); } }} />
-      <input ref={(el) => { docRef.current = el; }} type="file" accept=".pdf,.doc,.docx,.xls,.xlsx,.txt,.zip,.rar" className="hidden" onChange={async (e) => { const f = e.target.files?.[0]; if (!f) return; setMediaFile(f); setMediaPreview("document"); }} />
+      <input ref={fileRef} type="file" accept="image/*,video/*" className="hidden" onChange={async (e) => { const f = e.target.files?.[0]; if (!f) return; setMediaFile(f); if (f.type.startsWith("image/")) { setMediaPreview(await readFileAsBase64(f)); } else { setMediaPreview("video"); } }} />
+      <input ref={docRef} type="file" accept=".pdf,.doc,.docx,.xls,.xlsx,.txt,.zip,.rar" className="hidden" onChange={async (e) => { const f = e.target.files?.[0]; if (!f) return; setMediaFile(f); setMediaPreview("document"); }} />
 
       <button className="flex items-center gap-2 text-sm mb-4" style={{ color: "hsl(213,80%,40%)" }} onClick={onBack}>
         <Icon name="ArrowLeft" size={16} />Назад
@@ -1012,21 +1060,86 @@ function GroupDetailPage({ group, currentUser, onBack }: { group: Group; current
             </div>
           )}
           <div className="space-y-4">
+            {sharePostId && (
+              <ShareModal postId={sharePostId} onClose={() => setSharePostId(null)} />
+            )}
             {posts.map((p) => (
               <div key={p.id} className="post-card">
                 <div className="flex items-center gap-3 mb-3">
                   <Avatar initials={p.author.initials} avatarUrl={p.author.avatar_url} size="sm" />
-                  <div>
+                  <div className="flex-1">
                     <div className="font-medium text-sm">{p.author.full_name}</div>
                     <div className="text-xs" style={{ color: "hsl(220,15%,60%)" }}>{timeAgo(p.created_at)}</div>
                   </div>
+                  {p.is_mine && (
+                    <button className="p-1.5 rounded hover:bg-red-50 transition-colors" style={{ color: "hsl(0,72%,48%)" }}
+                      onClick={() => handleDelete(p.id)} title="Удалить">
+                      <Icon name="Trash2" size={14} />
+                    </button>
+                  )}
                 </div>
-                {p.text && <p className="text-sm mb-2" style={{ color: "hsl(220,25%,20%)" }}>{p.text}</p>}
+                {p.text && <p className="text-sm mb-3" style={{ color: "hsl(220,25%,20%)" }}>{p.text}</p>}
                 {p.media_url && p.media_type === "image" && (
-                  <img src={p.media_url} className="w-full rounded-lg max-h-80 object-cover cursor-pointer" onClick={() => setMediaViewer({ url: p.media_url, type: "image" })} />
+                  <img src={p.media_url} className="w-full rounded-lg max-h-80 object-cover cursor-pointer mb-3" onClick={() => setMediaViewer({ url: p.media_url, type: "image" })} />
                 )}
                 {p.media_url && p.media_type === "video" && (
-                  <video src={p.media_url} controls className="w-full rounded-lg max-h-80 cursor-pointer" onClick={(e) => { e.preventDefault(); setMediaViewer({ url: p.media_url, type: "video" }); }} />
+                  <video src={p.media_url} controls className="w-full rounded-lg max-h-80 mb-3" />
+                )}
+                {p.media_url && p.media_type === "document" && (
+                  <a href={p.media_url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-2 px-3 py-2 rounded-lg mb-3 text-sm" style={{ background: "hsl(216,20%,96%)", color: "hsl(213,80%,40%)" }}>
+                    <Icon name="FileText" size={15} />Открыть документ
+                  </a>
+                )}
+                {/* Действия */}
+                <div className="flex items-center gap-1 pt-2 border-t" style={{ borderColor: "hsl(216,20%,92%)" }}>
+                  <button className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs transition-colors ${p.liked ? "text-red-500" : ""}`}
+                    style={{ color: p.liked ? "hsl(0,72%,48%)" : "hsl(220,15%,55%)" }}
+                    onClick={() => handleLike(p.id)}>
+                    <Icon name={p.liked ? "Heart" : "Heart"} size={14} style={{ fill: p.liked ? "currentColor" : "none" }} />
+                    {p.likes_count > 0 && p.likes_count}
+                  </button>
+                  <button className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs transition-colors hover:bg-muted"
+                    style={{ color: "hsl(220,15%,55%)" }}
+                    onClick={() => loadComments(p.id)}>
+                    <Icon name="MessageCircle" size={14} />
+                    {p.comments_count > 0 && p.comments_count}
+                  </button>
+                  <button className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs transition-colors hover:bg-muted ml-auto"
+                    style={{ color: "hsl(220,15%,55%)" }}
+                    onClick={() => setSharePostId(p.id)}>
+                    <Icon name="Share2" size={14} />
+                  </button>
+                </div>
+                {/* Комментарии */}
+                {openComments === p.id && (
+                  <div className="mt-3 pt-3 border-t space-y-2" style={{ borderColor: "hsl(216,20%,92%)" }}>
+                    {(comments[p.id] || []).map((c) => (
+                      <div key={c.id} className="flex gap-2">
+                        <Avatar initials={c.author.initials} size="sm" />
+                        <div className="flex-1 px-3 py-2 rounded-lg text-sm" style={{ background: "hsl(216,20%,96%)" }}>
+                          <div className="font-medium text-xs mb-0.5">{c.author.full_name}</div>
+                          <div style={{ color: "hsl(220,25%,25%)" }}>{c.text}</div>
+                        </div>
+                      </div>
+                    ))}
+                    {currentUser && (
+                      <div className="flex gap-2 mt-2">
+                        <Avatar initials={getInitials(currentUser.full_name)} avatarUrl={currentUser.avatar_url} size="sm" />
+                        <div className="flex-1 flex gap-2">
+                          <input className="flex-1 px-3 py-1.5 rounded-lg border text-sm outline-none"
+                            style={{ borderColor: "hsl(216,20%,85%)" }}
+                            placeholder="Комментарий..."
+                            value={commentTexts[p.id] || ""}
+                            onChange={(e) => setCommentTexts((prev) => ({ ...prev, [p.id]: e.target.value }))}
+                            onKeyDown={(e) => { if (e.key === "Enter") sendComment(p.id); }}
+                          />
+                          <button className="btn-primary text-xs px-3 py-1.5" onClick={() => sendComment(p.id)}>
+                            <Icon name="Send" size={13} />
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
                 )}
               </div>
             ))}
@@ -1419,8 +1532,9 @@ function FeedPage({ currentUser, onOpenProfile, cache, setCache, loaded, onLoade
   );
 }
 
-function FriendsPage({ onOpenProfile, cache, setCache, loaded, onLoaded }: {
+function FriendsPage({ onOpenProfile, onStartChat, cache, setCache, loaded, onLoaded }: {
   onOpenProfile?: (uid: number) => void;
+  onStartChat?: (uid: number) => void;
   cache: SocialUser[]; setCache: (u: SocialUser[]) => void; loaded: boolean; onLoaded: () => void;
 }) {
   const [users, setUsersLocal] = useState<SocialUser[]>(cache);
@@ -1463,17 +1577,24 @@ function FriendsPage({ onOpenProfile, cache, setCache, loaded, onLoaded }: {
       {!loading && following.length > 0 && (
         <div>
           <h2 className="font-semibold text-xs uppercase tracking-wider mb-3" style={{ color: "hsl(220,15%,50%)" }}>Мои подписки</h2>
-          <div className="grid grid-cols-2 gap-3">
+          <div className="space-y-2">
             {following.map((u) => (
               <div key={u.id} className="post-card flex items-center gap-3">
-                <div className="cursor-pointer" onClick={() => onOpenProfile?.(u.id)}><Avatar initials={u.initials} /></div>
+                <div className="cursor-pointer flex-shrink-0" onClick={() => onOpenProfile?.(u.id)}><Avatar initials={u.initials} avatarUrl={u.avatar_url} /></div>
                 <div className="flex-1 min-w-0">
-                  <button className="font-medium text-sm truncate hover:underline text-left w-full" onClick={() => onOpenProfile?.(u.id)}>{u.full_name}</button>
+                  <button className="font-medium text-sm hover:underline text-left block truncate w-full" onClick={() => onOpenProfile?.(u.id)}>{u.full_name}</button>
                   <div className="text-xs truncate" style={{ color: "hsl(220,15%,55%)" }}>{u.job_title || "Участник"}</div>
                 </div>
-                <button className="btn-outline text-xs p-2" onClick={() => toggleFollow(u)} title="Отписаться">
-                  <Icon name="UserMinus" size={13} />
-                </button>
+                <div className="flex gap-1.5 flex-shrink-0">
+                  {onStartChat && (
+                    <button className="btn-outline text-xs p-2" onClick={() => onStartChat(u.id)} title="Написать">
+                      <Icon name="MessageSquare" size={13} />
+                    </button>
+                  )}
+                  <button className="btn-outline text-xs p-2" onClick={() => toggleFollow(u)} title="Отписаться">
+                    <Icon name="UserMinus" size={13} />
+                  </button>
+                </div>
               </div>
             ))}
           </div>
@@ -1487,15 +1608,20 @@ function FriendsPage({ onOpenProfile, cache, setCache, loaded, onLoaded }: {
           </h2>
           <div className="space-y-2">
             {suggestions.map((u) => (
-              <div key={u.id} className="post-card flex items-center gap-4">
-                <div className="cursor-pointer" onClick={() => onOpenProfile?.(u.id)}><Avatar initials={u.initials} /></div>
+              <div key={u.id} className="post-card flex items-center gap-3">
+                <div className="cursor-pointer flex-shrink-0" onClick={() => onOpenProfile?.(u.id)}><Avatar initials={u.initials} avatarUrl={u.avatar_url} /></div>
                 <div className="flex-1 min-w-0">
-                  <button className="font-medium text-sm hover:underline text-left" onClick={() => onOpenProfile?.(u.id)}>{u.full_name}</button>
-                  <div className="text-xs" style={{ color: "hsl(220,15%,55%)" }}>{u.job_title || "Участник сети"}</div>
+                  <button className="font-medium text-sm hover:underline text-left block truncate w-full" onClick={() => onOpenProfile?.(u.id)}>{u.full_name}</button>
+                  <div className="text-xs truncate" style={{ color: "hsl(220,15%,55%)" }}>{u.job_title || "Участник сети"}</div>
                 </div>
-                <button className="btn-primary text-xs px-4 py-1.5" onClick={() => toggleFollow(u)}>
-                  + Подписаться
-                </button>
+                <div className="flex gap-1.5 flex-shrink-0">
+                  {onStartChat && (
+                    <button className="btn-outline text-xs p-2" onClick={() => onStartChat(u.id)} title="Написать">
+                      <Icon name="MessageSquare" size={13} />
+                    </button>
+                  )}
+                  <button className="btn-primary text-xs px-3 py-1.5 flex-shrink-0" onClick={() => toggleFollow(u)}>+</button>
+                </div>
               </div>
             ))}
           </div>
@@ -1695,9 +1821,9 @@ function MessagesPage({ currentUser }: { currentUser: User | null }) {
   const [sendingMedia, setSendingMedia] = useState(false);
   const [mediaViewer, setMediaViewer] = useState<{ url: string; type: string } | null>(null);
   const [showMobileChat, setShowMobileChat] = useState(false);
-  const messagesEndRef = { current: null as HTMLDivElement | null };
-  const fileRef = { current: null as HTMLInputElement | null };
-  const docRef = { current: null as HTMLInputElement | null };
+  const messagesEndRef = useRef<HTMLDivElement | null>(null);
+  const fileRef = useRef<HTMLInputElement | null>(null);
+  const docRef = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => {
     apiPost(SOCIAL_URL, { action: "chat_list" }).then((r) => {
@@ -1823,7 +1949,7 @@ function MessagesPage({ currentUser }: { currentUser: User | null }) {
               {msg.is_me && <Avatar initials={myInitials} avatarUrl={currentUser?.avatar_url} size="sm" />}
             </div>
           ))}
-          <div ref={(el) => { messagesEndRef.current = el; }} />
+          <div ref={messagesEndRef} />
         </div>
 
         <div className="px-3 py-2.5 border-t bg-card flex items-center gap-2 flex-shrink-0" style={{ borderColor: "hsl(216,20%,88%)" }}>
@@ -1861,8 +1987,8 @@ function MessagesPage({ currentUser }: { currentUser: User | null }) {
 
   return (
     <div className="flex" style={{ height: "calc(100vh - 3rem)" }}>
-      <input ref={(el) => { fileRef.current = el; }} type="file" accept="image/*,video/*" className="hidden" onChange={(e) => handleFileSend(e, false)} />
-      <input ref={(el) => { docRef.current = el; }} type="file" accept="*/*" className="hidden" onChange={(e) => handleFileSend(e, true)} />
+      <input ref={fileRef} type="file" accept="image/*,video/*" className="hidden" onChange={(e) => handleFileSend(e, false)} />
+      <input ref={docRef} type="file" accept="*/*" className="hidden" onChange={(e) => handleFileSend(e, true)} />
 
       {/* Список диалогов — скрыт на мобилке когда открыт чат */}
       <div className={`w-full md:w-72 flex-shrink-0 border-r flex flex-col ${showMobileChat ? "hidden md:flex" : "flex"}`} style={{ borderColor: "hsl(216,20%,88%)" }}>
@@ -2029,7 +2155,7 @@ function EditProfileModal({
   );
 }
 
-function ProfilePage({ user, onUserUpdate, onOpenProfile }: { user?: User; onUserUpdate?: (u: User) => void; onOpenProfile?: (uid: number) => void }) {
+function ProfilePage({ user, onUserUpdate, onOpenProfile, onStartChat }: { user?: User; onUserUpdate?: (u: User) => void; onOpenProfile?: (uid: number) => void; onStartChat?: (uid: number) => void }) {
   const [editOpen, setEditOpen] = useState(false);
   const [uploadingAvatar, setUploadingAvatar] = useState(false);
   const [uploadingCover, setUploadingCover] = useState(false);
@@ -2041,8 +2167,8 @@ function ProfilePage({ user, onUserUpdate, onOpenProfile }: { user?: User; onUse
   const [followersModal, setFollowersModal] = useState<"followers" | "following" | null>(null);
   const [followUsers, setFollowUsers] = useState<{ id: number; full_name: string; job_title: string; avatar_url: string; initials: string; is_following: boolean }[]>([]);
   const [mediaViewer, setMediaViewer] = useState<{ url: string; type: string } | null>(null);
-  const avatarInputRef = { current: null as HTMLInputElement | null };
-  const coverInputRef = { current: null as HTMLInputElement | null };
+  const avatarInputRef = useRef<HTMLInputElement | null>(null);
+  const coverInputRef = useRef<HTMLInputElement | null>(null);
 
   const displayName = user?.full_name || "Пользователь";
   const displayTitle = user?.job_title || "Участник сети";
@@ -2127,8 +2253,8 @@ function ProfilePage({ user, onUserUpdate, onOpenProfile }: { user?: User; onUse
 
   return (
     <>
-      <input ref={(el) => { avatarInputRef.current = el; }} type="file" accept="image/*" className="hidden" onChange={handleAvatarUpload} />
-      <input ref={(el) => { coverInputRef.current = el; }} type="file" accept="image/*" className="hidden" onChange={handleCoverUpload} />
+      <input ref={avatarInputRef} type="file" accept="image/*" className="hidden" onChange={handleAvatarUpload} />
+      <input ref={coverInputRef} type="file" accept="image/*" className="hidden" onChange={handleCoverUpload} />
       {editOpen && user && (
         <EditProfileModal user={user} onClose={() => setEditOpen(false)} onSave={(u) => { onUserUpdate?.(u); }} />
       )}
@@ -2140,6 +2266,7 @@ function ProfilePage({ user, onUserUpdate, onOpenProfile }: { user?: User; onUse
           onClose={() => setFollowersModal(null)}
           onFollowToggle={(uid, following) => setFollowUsers((prev) => prev.map((u) => u.id === uid ? { ...u, is_following: following } : u))}
           onOpenProfile={onOpenProfile}
+          onStartChat={onStartChat}
         />
       )}
     <div className="max-w-3xl mx-auto px-4 py-5">
@@ -2201,12 +2328,12 @@ function ProfilePage({ user, onUserUpdate, onOpenProfile }: { user?: User; onUse
             )}
           </div>
 
-          <div className="grid grid-cols-4 gap-3 pt-3 border-t" style={{ borderColor: "hsl(216,20%,90%)" }}>
+          <div className="grid grid-cols-4 gap-1 pt-3 border-t" style={{ borderColor: "hsl(216,20%,90%)" }}>
             {allStats.map((s, i) => (
-              <button key={s.label} className="text-center py-1 rounded-lg hover:bg-gray-50 transition-colors"
+              <button key={s.label} className="text-center py-1 px-1 rounded-lg hover:bg-gray-50 transition-colors"
                 onClick={() => { if (i === 0) openFollowModal("followers"); else if (i === 1) openFollowModal("following"); }}>
-                <div className="font-bold text-lg" style={{ color: "hsl(221,65%,22%)" }}>{s.value}</div>
-                <div className="text-xs" style={{ color: i < 2 ? "hsl(213,80%,40%)" : "hsl(220,15%,55%)" }}>{s.label}</div>
+                <div className="font-bold text-base leading-tight" style={{ color: "hsl(221,65%,22%)" }}>{s.value}</div>
+                <div className="leading-tight mt-0.5" style={{ fontSize: "9px", color: i < 2 ? "hsl(213,80%,40%)" : "hsl(220,15%,55%)" }}>{s.label}</div>
               </button>
             ))}
           </div>
@@ -2641,6 +2768,10 @@ export default function Index() {
         cache={cachedFeed} setCache={setCachedFeed}
         loaded={loadedTabs.has("feed")} onLoaded={() => markLoaded("feed")} />;
       case "friends": return <FriendsPage onOpenProfile={openUserProfile}
+        onStartChat={async (uid) => {
+          const r = await apiPost(SOCIAL_URL, { action: "chat_start", partner_id: uid });
+          if (r.ok) setActive("messages");
+        }}
         cache={cachedFriends} setCache={setCachedFriends}
         loaded={loadedTabs.has("friends")} onLoaded={() => markLoaded("friends")} />;
       case "groups": return <GroupsPage currentUser={currentUser} />;
@@ -2652,7 +2783,8 @@ export default function Index() {
         if (r.ok) setActive("messages");
       }} onOpenProfile={openUserProfile} />;
       case "messages": return <MessagesPage currentUser={currentUser} />;
-      case "profile": return <ProfilePage user={currentUser} onUserUpdate={(u) => { setCurrentUser(u); localStorage.setItem("nexus_user", JSON.stringify(u)); }} onOpenProfile={openUserProfile} />;
+      case "profile": return <ProfilePage user={currentUser} onUserUpdate={(u) => { setCurrentUser(u); localStorage.setItem("nexus_user", JSON.stringify(u)); }} onOpenProfile={openUserProfile}
+        onStartChat={async (uid) => { const r = await apiPost(SOCIAL_URL, { action: "chat_start", partner_id: uid }); if (r.ok) setActive("messages"); }} />;
       case "admin": return <AdminPage />;
     }
   };

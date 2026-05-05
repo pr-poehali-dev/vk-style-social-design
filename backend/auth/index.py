@@ -7,6 +7,9 @@ import os
 import hashlib
 import secrets
 import psycopg2
+import smtplib
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
 
 SCHEMA = "t_p89645412_vk_style_social_desi"
 
@@ -209,9 +212,36 @@ def handler(event: dict, context) -> dict:
         code = secrets.token_hex(3).upper()  # 6-значный hex код
         cur.execute(f"INSERT INTO {SCHEMA}.password_resets (user_id, code) VALUES (%s,%s)", (user_id, code))
         conn.commit(); conn.close()
-        # В реальном проекте здесь была бы отправка email
-        # Для демо возвращаем код прямо (в продакшн убрать!)
-        return ok({"ok": True, "code": code, "message": f"Код для сброса пароля: {code}", "full_name": full_name})
+        # Отправка email с кодом
+        smtp_email = os.environ.get("SMTP_EMAIL", "")
+        smtp_password = os.environ.get("SMTP_PASSWORD", "")
+        email_sent = False
+        if smtp_email and smtp_password:
+            try:
+                msg = MIMEMultipart("alternative")
+                msg["Subject"] = "Восстановление пароля CLANSE"
+                msg["From"] = smtp_email
+                msg["To"] = email
+                html = f"""
+                <div style="font-family:sans-serif;max-width:480px;margin:0 auto;padding:24px">
+                  <h2 style="color:#1a6abf">CLANSE</h2>
+                  <p>Здравствуйте, <b>{full_name}</b>!</p>
+                  <p>Ваш код для сброса пароля:</p>
+                  <div style="font-size:32px;font-weight:bold;letter-spacing:8px;color:#1a6abf;background:#f0f5ff;padding:16px;border-radius:8px;text-align:center;margin:16px 0">{code}</div>
+                  <p style="color:#666">Код действителен 30 минут. Если вы не запрашивали сброс — просто проигнорируйте это письмо.</p>
+                </div>"""
+                msg.attach(MIMEText(html, "html"))
+                with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
+                    server.login(smtp_email, smtp_password)
+                    server.sendmail(smtp_email, email, msg.as_string())
+                email_sent = True
+            except Exception:
+                pass
+        if email_sent:
+            return ok({"ok": True, "message": f"Код отправлен на {email}"})
+        else:
+            # Если email не настроен — показываем код в ответе (демо-режим)
+            return ok({"ok": True, "code": code, "message": f"Код для сброса пароля: {code}", "full_name": full_name})
 
     # --- reset_password_confirm (применение кода) ---
     if action == "reset_password_confirm":

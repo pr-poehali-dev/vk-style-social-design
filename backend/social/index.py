@@ -383,13 +383,20 @@ def handler(event: dict, context) -> dict:
         if "," in file_data: file_data = file_data.split(",", 1)[1]
         try: data_bytes = base64.b64decode(file_data)
         except: return err(400, "Ошибка декодирования")
-        if len(data_bytes) > 50 * 1024 * 1024: return err(400, "Файл слишком большой (макс 50 МБ)")
+        if len(data_bytes) > 200 * 1024 * 1024: return err(400, "Файл слишком большой (макс 200 МБ)")
         ext = mimetypes.guess_extension(file_type) or ".bin"
         if ext == ".jpe": ext = ".jpg"
+        if ext == ".mpga": ext = ".mp3"
+        if not ext or ext == ".None": ext = ".bin"
         key = f"nexus/media/{uuid.uuid4().hex}{ext}"
         s3 = get_s3()
         s3.put_object(Bucket=BUCKET, Key=key, Body=data_bytes, ContentType=file_type)
-        media_kind = "video" if file_type.startswith("video/") else "image"
+        if file_type.startswith("video/"):
+            media_kind = "video"
+        elif file_type.startswith("image/"):
+            media_kind = "image"
+        else:
+            media_kind = "document"
         return ok({"url": f"{cdn_base}/{key}", "media_type": media_kind})
 
     # --- upload cover ---
@@ -628,5 +635,117 @@ def handler(event: dict, context) -> dict:
         return ok({"members": [{"id": r[0], "full_name": r[1], "job_title": r[2] or "",
             "avatar_url": r[3] or "", "role": r[4], "joined_at": str(r[5]),
             "initials": "".join(w[0] for w in r[1].split() if w)[:2].upper()} for r in rows]})
+
+    # --- group posts с liked ---
+    if action == "group_posts_v2":
+        gid = body.get("group_id") or qs.get("group_id")
+        if not gid: return err(400, "group_id обязателен")
+        conn = get_conn(); cur = conn.cursor()
+        user = get_user_by_token(cur, token) if token else None
+        uid = user[0] if user else None
+        cur.execute(f"""SELECT gp.id, gp.text, gp.media_url, gp.media_type, gp.likes_count,
+            COALESCE(gp.comments_count,0), gp.created_at,
+            u.id, u.full_name, u.job_title, u.avatar_url,
+            CASE WHEN %s IS NOT NULL THEN
+                EXISTS(SELECT 1 FROM {SCHEMA}.group_post_likes WHERE post_id=gp.id AND user_id=%s)
+            ELSE FALSE END as liked,
+            gp.user_id
+            FROM {SCHEMA}.group_posts gp JOIN {SCHEMA}.users u ON u.id=gp.user_id
+            WHERE gp.group_id=%s ORDER BY gp.created_at DESC LIMIT 50""", (uid, uid, gid))
+        rows = cur.fetchall(); conn.close()
+        return ok({"posts": [{"id": r[0], "text": r[1] or "", "media_url": r[2] or "", "media_type": r[3] or "",
+            "likes_count": r[4], "comments_count": r[5], "created_at": str(r[6]),
+            "liked": bool(r[11]), "is_mine": uid == r[12],
+            "author": {"id": r[7], "full_name": r[8], "job_title": r[9] or "",
+                "avatar_url": r[10] or "", "initials": "".join(w[0] for w in r[8].split() if w)[:2].upper()}} for r in rows]})
+
+    # --- group like ---
+    if action == "group_like":
+        if not token: return err(401, "Не авторизован")
+        pid = body.get("post_id")
+        if not pid: return err(400, "post_id обязателен")
+        conn = get_conn(); cur = conn.cursor()
+        user = get_user_by_token(cur, token)
+        if not user: conn.close(); return err(401, "Сессия истекла")
+        uid = user[0]
+        cur.execute(f"SELECT 1 FROM {SCHEMA}.group_post_likes WHERE post_id=%s AND user_id=%s", (pid, uid))
+        already = cur.fetchone()
+        if already:
+            cur.execute(f"UPDATE {SCHEMA}.group_posts SET likes_count=GREATEST(0,likes_count-1) WHERE id=%s RETURNING likes_count", (pid,))
+            likes = cur.fetchone()[0]
+            cur.execute(f"DELETE FROM {SCHEMA}.group_post_likes WHERE post_id=%s AND user_id=%s", (pid, uid))
+            liked = False
+        else:
+            cur.execute(f"INSERT INTO {SCHEMA}.group_post_likes (post_id,user_id) VALUES (%s,%s) ON CONFLICT DO NOTHING", (pid, uid))
+            cur.execute(f"UPDATE {SCHEMA}.group_posts SET likes_count=likes_count+1 WHERE id=%s RETURNING likes_count", (pid,))
+            row = cur.fetchone()
+            likes = row[0] if row else 0
+            liked = True
+        conn.commit(); conn.close()
+        return ok({"liked": liked, "likes_count": likes})
+
+    # --- group comment create ---
+    if action == "group_comment":
+        if not token: return err(401, "Не авторизован")
+        pid = body.get("post_id")
+        text = body.get("text", "").strip()
+        if not pid or not text: return err(400, "post_id и text обязательны")
+        conn = get_conn(); cur = conn.cursor()
+        user = get_user_by_token(cur, token)
+        if not user: conn.close(); return err(401, "Сессия истекла")
+        uid = user[0]
+        cur.execute(f"INSERT INTO {SCHEMA}.group_post_comments (post_id,user_id,text) VALUES (%s,%s,%s) RETURNING id, created_at", (pid, uid, text))
+        cid, cat = cur.fetchone()
+        cur.execute(f"UPDATE {SCHEMA}.group_posts SET comments_count=COALESCE(comments_count,0)+1 WHERE id=%s", (pid,))
+        conn.commit(); conn.close()
+        initials = "".join(w[0] for w in user[1].split() if w)[:2].upper()
+        return ok({"comment": {"id": cid, "text": text, "created_at": str(cat),
+            "author": {"id": uid, "full_name": user[1], "job_title": user[2] or "", "initials": initials, "avatar_url": ""}}})
+
+    # --- group comments list ---
+    if action == "group_comments":
+        pid = body.get("post_id") or qs.get("post_id")
+        if not pid: return err(400, "post_id обязателен")
+        conn = get_conn(); cur = conn.cursor()
+        cur.execute(f"""SELECT gc.id, gc.text, gc.created_at, u.id, u.full_name, u.job_title, u.avatar_url
+            FROM {SCHEMA}.group_post_comments gc JOIN {SCHEMA}.users u ON u.id=gc.user_id
+            WHERE gc.post_id=%s ORDER BY gc.created_at ASC LIMIT 100""", (pid,))
+        rows = cur.fetchall(); conn.close()
+        return ok({"comments": [{"id": r[0], "text": r[1], "created_at": str(r[2]),
+            "author": {"id": r[3], "full_name": r[4], "job_title": r[5] or "",
+                "avatar_url": r[6] or "", "initials": "".join(w[0] for w in r[4].split() if w)[:2].upper()}} for r in rows]})
+
+    # --- group post delete ---
+    if action == "group_post_delete":
+        if not token: return err(401, "Не авторизован")
+        pid = body.get("post_id")
+        if not pid: return err(400, "post_id обязателен")
+        conn = get_conn(); cur = conn.cursor()
+        user = get_user_by_token(cur, token)
+        if not user: conn.close(); return err(401, "Сессия истекла")
+        uid = user[0]
+        cur.execute(f"SELECT user_id, group_id FROM {SCHEMA}.group_posts WHERE id=%s", (pid,))
+        row = cur.fetchone()
+        if not row: conn.close(); return err(404, "Пост не найден")
+        post_uid, gid = row
+        # Разрешаем удалять автору поста или владельцу группы
+        cur.execute(f"SELECT 1 FROM {SCHEMA}.group_members WHERE group_id=%s AND user_id=%s AND role='owner'", (gid, uid))
+        is_owner = cur.fetchone()
+        if post_uid != uid and not is_owner: conn.close(); return err(403, "Нет прав на удаление")
+        cur.execute(f"UPDATE {SCHEMA}.groups SET posts_count=GREATEST(0,posts_count-1) WHERE id=%s", (gid,))
+        cur.execute(f"UPDATE {SCHEMA}.group_posts SET text='', media_url='', media_type='' WHERE id=%s", (pid,))
+        # Помечаем как удалённый через обнуление (мягкое удаление)
+        cur.execute(f"UPDATE {SCHEMA}.group_posts SET user_id=(SELECT id FROM {SCHEMA}.users ORDER BY id LIMIT 1) WHERE id=%s AND FALSE", (pid,))
+        conn.commit()
+        # Физически удаляем
+        try:
+            cur.execute(f"DELETE FROM {SCHEMA}.group_post_comments WHERE post_id=%s", (pid,))
+            cur.execute(f"DELETE FROM {SCHEMA}.group_post_likes WHERE post_id=%s", (pid,))
+            cur.execute(f"DELETE FROM {SCHEMA}.group_posts WHERE id=%s", (pid,))
+            conn.commit()
+        except Exception:
+            pass
+        conn.close()
+        return ok({"ok": True})
 
     return err(400, "Неизвестное действие")
