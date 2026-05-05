@@ -748,7 +748,7 @@ function UserProfilePage({ userId, currentUser, onBack, onOpenChat, onOpenProfil
       </button>
 
       <div className="post-card mb-4 overflow-hidden p-0">
-        {/* Cover */}
+        {/* Обложка */}
         <div className="relative w-full" style={{ height: 160 }}>
           {profile.cover_url
             ? <img src={profile.cover_url} alt="cover" className="w-full h-full object-cover" />
@@ -756,7 +756,7 @@ function UserProfilePage({ userId, currentUser, onBack, onOpenChat, onOpenProfil
         </div>
 
         <div className="px-5 pb-5">
-          {/* Avatar row */}
+          {/* Аватар + кнопки */}
           <div className="flex items-end justify-between -mt-10 mb-3">
             <div className="flex-shrink-0">
               {profile.avatar_url
@@ -764,29 +764,30 @@ function UserProfilePage({ userId, currentUser, onBack, onOpenChat, onOpenProfil
                 : <div className="w-20 h-20 rounded-full border-4 flex items-center justify-center text-xl font-bold text-white" style={{ background: "hsl(213,80%,40%)", borderColor: "white" }}>{displayInitials}</div>}
             </div>
             {currentUser && !profile.is_me && (
-              <div className="flex gap-2 items-center pt-1">
+              <div className="flex gap-2 items-center pt-1 flex-wrap">
                 <button className={following ? "btn-outline text-xs px-4 py-2" : "btn-primary text-xs px-4 py-2"} onClick={handleFollow}>
                   {following ? "Подписан" : "+ Подписаться"}
                 </button>
                 {onOpenChat && (
-                  <button className="btn-outline text-xs px-3 py-2" onClick={() => onOpenChat(userId)} title="Написать сообщение">
-                    <Icon name="MessageSquare" size={14} />
+                  <button className="btn-outline text-xs px-3 py-2 flex items-center gap-1.5" onClick={() => onOpenChat(userId)}>
+                    <Icon name="MessageSquare" size={14} />Написать
                   </button>
                 )}
               </div>
             )}
           </div>
 
-          {/* Name & title */}
+          {/* Имя, должность, bio */}
           <h1 className="font-bold text-xl leading-tight">{profile.full_name}</h1>
-          <p className="text-sm mt-0.5 mb-2" style={{ color: "hsl(220,15%,50%)" }}>{profile.job_title}</p>
-          {profile.bio && <p className="text-sm mb-3 leading-relaxed" style={{ color: "hsl(220,25%,30%)" }}>{profile.bio}</p>}
+          <p className="text-sm mt-0.5" style={{ color: "hsl(220,15%,50%)" }}>{profile.job_title}</p>
+          {profile.bio && <p className="text-sm mt-2 leading-relaxed" style={{ color: "hsl(220,25%,25%)" }}>{profile.bio}</p>}
 
+          {/* Соцсети */}
           {socials.length > 0 && (
-            <div className="flex flex-wrap gap-2 mb-3">
+            <div className="flex items-center gap-2 mt-2 flex-wrap">
               {socials.map((s) => (
                 <a key={s.key} href={s.href} target="_blank" rel="noopener noreferrer"
-                  className="flex items-center gap-1 text-xs px-2.5 py-1 rounded-full"
+                  className="flex items-center gap-1 text-xs px-2 py-0.5 rounded-full transition-opacity hover:opacity-75"
                   style={{ background: `${s.color}15`, color: s.color, border: `1px solid ${s.color}30` }}>
                   <Icon name={s.icon} size={11} />{s.label}
                 </a>
@@ -794,8 +795,8 @@ function UserProfilePage({ userId, currentUser, onBack, onOpenChat, onOpenProfil
             </div>
           )}
 
-          {/* Stats */}
-          <div className="grid grid-cols-4 gap-1 pt-3 border-t" style={{ borderColor: "hsl(216,20%,90%)" }}>
+          {/* Статистика */}
+          <div className="grid grid-cols-4 gap-1 pt-3 mt-3 border-t" style={{ borderColor: "hsl(216,20%,90%)" }}>
             {[
               { label: "Подписчиков", value: followersCount, click: () => openFollowModal("followers") },
               { label: "Подписок", value: profile.stats.following, click: () => openFollowModal("following") },
@@ -811,7 +812,29 @@ function UserProfilePage({ userId, currentUser, onBack, onOpenChat, onOpenProfil
         </div>
       </div>
 
-      {/* Posts */}
+      {/* Аналитика */}
+      <div className="post-card mb-4">
+        <h2 className="font-semibold text-sm mb-3 flex items-center gap-2">
+          <Icon name="BarChart2" size={15} style={{ color: "hsl(213,80%,40%)" }} />
+          Аналитика
+        </h2>
+        <div className="grid grid-cols-3 gap-3">
+          {[
+            { label: "Просмотры", value: profile.stats.views.toLocaleString("ru"), icon: "Eye" },
+            { label: "Охват", value: profile.stats.reach.toLocaleString("ru"), icon: "Users" },
+            { label: "Подписчики", value: followersCount.toLocaleString("ru"), icon: "UserPlus" },
+          ].map((m) => (
+            <div key={m.label} className="p-3 rounded-lg" style={{ background: "hsl(216,20%,96%)" }}>
+              <div className="text-xs mb-1 flex items-center gap-1" style={{ color: "hsl(220,15%,55%)" }}>
+                <Icon name={m.icon} size={11} />{m.label}
+              </div>
+              <div className="font-bold text-base" style={{ color: "hsl(221,65%,22%)" }}>{m.value}</div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Публикации */}
       <div className="flex items-center justify-between mb-3">
         <h2 className="font-semibold text-xs uppercase tracking-wider" style={{ color: "hsl(220,15%,50%)" }}>Публикации</h2>
         <div className="flex gap-1">
@@ -820,51 +843,77 @@ function UserProfilePage({ userId, currentUser, onBack, onOpenChat, onOpenProfil
         </div>
       </div>
 
-      {postView === "grid" && (
+      {loading && <div className="h-32 rounded-lg shimmer mb-4" />}
+
+      {!loading && postView === "grid" && (
         <div>
           {mediaOnly.length > 0 && (
-            <div className="grid grid-cols-3 gap-1 mb-4">
-              {mediaOnly.map((p) => (
-                <div key={p.id} className="relative aspect-square rounded-lg overflow-hidden bg-gray-100 cursor-pointer"
-                  onClick={() => setMediaViewer({ url: p.media_url!, type: p.media_type || "image" })}>
-                  {p.media_type === "image"
-                    ? <img src={p.media_url} alt="" className="w-full h-full object-cover" />
-                    : <div className="w-full h-full flex items-center justify-center" style={{ background: "hsl(221,25%,18%)" }}><Icon name="Play" size={24} style={{ color: "white" }} /></div>}
-                  <div className="absolute bottom-0 left-0 right-0 flex gap-2 px-2 py-1" style={{ background: "rgba(0,0,0,0.4)", color: "white", fontSize: "10px" }}>
-                    <span className="flex items-center gap-1"><Icon name="Heart" size={10} />{p.likes_count}</span>
-                    <span className="flex items-center gap-1"><Icon name="Eye" size={10} />{p.views_count}</span>
+            <>
+              <div className="text-xs font-medium mb-2" style={{ color: "hsl(220,15%,50%)" }}>Фото и видео</div>
+              <div className="grid grid-cols-3 gap-1 mb-4">
+                {mediaOnly.map((p) => (
+                  <div key={p.id} className="relative aspect-square rounded-lg overflow-hidden bg-gray-100 cursor-pointer"
+                    onClick={() => setMediaViewer({ url: p.media_url!, type: p.media_type || "image" })}>
+                    {p.media_type === "image"
+                      ? <img src={p.media_url} alt="" className="w-full h-full object-cover" />
+                      : <div className="w-full h-full flex items-center justify-center" style={{ background: "hsl(221,25%,18%)" }}>
+                          <Icon name="Play" size={24} style={{ color: "white" }} />
+                        </div>}
+                    {p.media_type === "video" && (
+                      <span className="absolute top-1 right-1"><Icon name="Video" size={12} style={{ color: "white" }} /></span>
+                    )}
+                    <div className="absolute bottom-0 left-0 right-0 flex items-center gap-2 px-2 py-1" style={{ background: "rgba(0,0,0,0.4)", color: "white", fontSize: "10px" }}>
+                      <Icon name="Heart" size={10} />{p.likes_count}
+                      <Icon name="Eye" size={10} />{p.views_count}
+                    </div>
                   </div>
-                </div>
-              ))}
+                ))}
+              </div>
+            </>
+          )}
+          {posts.filter((p) => !p.media_url).length > 0 && (
+            <>
+              <div className="text-xs font-medium mb-2" style={{ color: "hsl(220,15%,50%)" }}>Текстовые посты</div>
+              <div className="space-y-2">
+                {posts.filter((p) => !p.media_url).map((p) => (
+                  <div key={p.id} className="post-card py-2 px-4">
+                    <p className="text-sm" style={{ color: "hsl(220,25%,20%)" }}>{p.text || "—"}</p>
+                    <div className="text-xs mt-1 flex items-center gap-3" style={{ color: "hsl(220,15%,60%)" }}>
+                      <span>{timeAgo(p.created_at)}</span>
+                      <span className="flex items-center gap-1"><Icon name="Heart" size={11} />{p.likes_count}</span>
+                      <span className="flex items-center gap-1"><Icon name="Eye" size={11} />{p.views_count}</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </>
+          )}
+          {posts.length === 0 && (
+            <div className="post-card text-center py-10" style={{ color: "hsl(220,15%,60%)" }}>
+              <Icon name="FileText" size={28} className="mx-auto mb-2 opacity-30" />
+              <div className="text-sm">Публикаций пока нет</div>
             </div>
           )}
-          <div className="space-y-2">
-            {posts.filter((p) => !p.media_url).map((p) => (
-              <div key={p.id} className="post-card py-3 px-4">
-                <p className="text-sm" style={{ color: "hsl(220,25%,20%)" }}>{p.text}</p>
-                <div className="flex gap-3 mt-2 text-xs" style={{ color: "hsl(220,15%,60%)" }}>
-                  <span>{timeAgo(p.created_at)}</span>
-                  <span className="flex items-center gap-1"><Icon name="Heart" size={11} />{p.likes_count}</span>
-                  <span className="flex items-center gap-1"><Icon name="Eye" size={11} />{p.views_count}</span>
-                </div>
-              </div>
-            ))}
-          </div>
-          {posts.length === 0 && <div className="text-center py-10 text-sm" style={{ color: "hsl(220,15%,55%)" }}>Публикаций пока нет</div>}
         </div>
       )}
 
-      {postView === "list" && (
+      {!loading && postView === "list" && (
         <div className="space-y-4">
           {posts.map((p) => (
             <PostCard key={p.id} post={p}
               onLike={async (id) => { const r = await apiPost(POSTS_URL, { action: "like", post_id: id }); if (r.ok) setPosts((prev) => prev.map((pp) => pp.id === id ? { ...pp, liked: r.data.liked as boolean, likes_count: r.data.likes_count as number } : pp)); }}
               onCommentAdded={(id) => setPosts((prev) => prev.map((pp) => pp.id === id ? { ...pp, comments_count: pp.comments_count + 1 } : pp))}
+              onOpenProfile={onOpenProfile}
               userInitials={currentUser ? getInitials(currentUser.full_name) : "?"}
               userAvatarUrl={currentUser?.avatar_url}
             />
           ))}
-          {posts.length === 0 && <div className="text-center py-10 text-sm" style={{ color: "hsl(220,15%,55%)" }}>Публикаций пока нет</div>}
+          {posts.length === 0 && (
+            <div className="post-card text-center py-10" style={{ color: "hsl(220,15%,60%)" }}>
+              <Icon name="FileText" size={28} className="mx-auto mb-2 opacity-30" />
+              <div className="text-sm">Публикаций пока нет</div>
+            </div>
+          )}
         </div>
       )}
     </div>
