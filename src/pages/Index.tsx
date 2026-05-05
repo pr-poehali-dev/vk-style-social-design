@@ -238,9 +238,9 @@ function AuthScreen({ onAuth }: { onAuth: (user: User, token: string) => void })
       <div className="w-full max-w-md">
         <div className="text-center mb-8">
           <div className="inline-flex items-center justify-center w-12 h-12 rounded-lg mb-4" style={{ background: "hsl(213,80%,42%)" }}>
-            <span className="text-white font-bold text-lg">N</span>
+            <span className="text-white font-bold text-lg">C</span>
           </div>
-          <h1 className="text-white font-semibold tracking-widest text-xl">NEXUS</h1>
+          <h1 className="text-white font-semibold tracking-widest text-xl">CLANSE</h1>
           <p className="text-sm mt-1" style={{ color: "hsl(214,25%,55%)" }}>Деловая профессиональная сеть</p>
         </div>
 
@@ -411,6 +411,7 @@ function CreatePostModal({ userInitials, onClose, onCreated }: { userInitials: s
   const [text, setText] = useState("");
   const [tags, setTags] = useState("");
   const [loading, setLoading] = useState(false);
+  const [uploadPercent, setUploadPercent] = useState(0);
   const [error, setError] = useState("");
   const [mediaPreview, setMediaPreview] = useState<string>("");
   const [mediaFile, setMediaFile] = useState<File | null>(null);
@@ -419,26 +420,34 @@ function CreatePostModal({ userInitials, onClose, onCreated }: { userInitials: s
   const handleMediaSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    if (file.size > 50 * 1024 * 1024) { setError("Файл не более 50 МБ"); return; }
+    if (file.size > 100 * 1024 * 1024) { setError("Файл не более 100 МБ"); return; }
     setMediaFile(file);
-    const b64 = await readFileAsBase64(file);
-    setMediaPreview(b64);
+    if (file.type.startsWith("image/")) {
+      const b64 = await readFileAsBase64(file);
+      setMediaPreview(b64);
+    } else {
+      setMediaPreview("video");
+    }
   };
 
   const submit = async () => {
     if (!text.trim() && !mediaFile) { setError("Введите текст или добавьте медиа"); return; }
-    setLoading(true); setError("");
+    setLoading(true); setError(""); setUploadPercent(0);
     let media_url = "", media_type = "";
     if (mediaFile) {
+      setUploadPercent(15);
       const b64 = await readFileAsBase64(mediaFile);
+      setUploadPercent(55);
       const r = await apiPost(SOCIAL_URL, { action: "upload_media", file_data: b64, file_type: mediaFile.type });
-      if (!r.ok) { setError((r.data.error as string) || "Ошибка загрузки файла"); setLoading(false); return; }
+      setUploadPercent(85);
+      if (!r.ok) { setError((r.data.error as string) || "Ошибка загрузки файла"); setLoading(false); setUploadPercent(0); return; }
       media_url = r.data.url as string;
       media_type = r.data.media_type as string;
     }
     const r = await apiPost(POSTS_URL, { action: "create", text: text.trim(), tags: tags.trim(), media_url, media_type });
+    setUploadPercent(100);
     setLoading(false);
-    if (!r.ok) { setError((r.data.error as string) || "Ошибка создания поста"); return; }
+    if (!r.ok) { setError((r.data.error as string) || "Ошибка создания поста"); setUploadPercent(0); return; }
     onCreated(r.data.post as Post);
     onClose();
   };
@@ -472,8 +481,14 @@ function CreatePostModal({ userInitials, onClose, onCreated }: { userInitials: s
         {/* Media preview */}
         {mediaPreview && (
           <div className="relative mb-3 rounded-lg overflow-hidden">
-            {mediaFile?.type.startsWith("video/") ? (
-              <video src={mediaPreview} className="w-full max-h-48 object-cover" controls />
+            {mediaPreview === "video" ? (
+              <div className="flex items-center gap-3 px-4 py-3 rounded-lg" style={{ background: "hsl(216,20%,96%)" }}>
+                <Icon name="Video" size={20} style={{ color: "hsl(213,80%,40%)" }} />
+                <div>
+                  <div className="text-sm font-medium truncate">{mediaFile?.name}</div>
+                  <div className="text-xs" style={{ color: "hsl(220,15%,55%)" }}>{mediaFile ? (mediaFile.size / 1024 / 1024).toFixed(1) + " МБ" : ""}</div>
+                </div>
+              </div>
             ) : (
               <img src={mediaPreview} alt="preview" className="w-full max-h-48 object-cover rounded-lg" />
             )}
@@ -497,16 +512,27 @@ function CreatePostModal({ userInitials, onClose, onCreated }: { userInitials: s
         {error && (
           <div className="px-3 py-2 rounded-lg text-sm mb-3" style={{ background: "hsl(0,80%,97%)", color: "hsl(0,72%,40%)", border: "1px solid hsl(0,72%,88%)" }}>{error}</div>
         )}
+        {loading && uploadPercent > 0 && uploadPercent < 100 && (
+          <div className="mb-3">
+            <div className="flex justify-between text-xs mb-1" style={{ color: "hsl(220,15%,55%)" }}>
+              <span>{mediaFile ? "Загрузка файла..." : "Публикация..."}</span>
+              <span>{uploadPercent}%</span>
+            </div>
+            <div className="w-full h-1.5 rounded-full" style={{ background: "hsl(216,20%,90%)" }}>
+              <div className="h-full rounded-full transition-all duration-300" style={{ width: `${uploadPercent}%`, background: "hsl(213,80%,40%)" }} />
+            </div>
+          </div>
+        )}
         <div className="flex justify-between items-center">
           <div className="flex gap-2">
-            <button onClick={() => fileInputRef.current?.click()} className="btn-outline text-xs px-3 py-1.5 flex items-center gap-1.5">
+            <button onClick={() => fileInputRef.current?.click()} className="btn-outline text-xs px-3 py-1.5 flex items-center gap-1.5" disabled={loading}>
               <Icon name="Image" size={13} />Фото/Видео
             </button>
           </div>
           <div className="flex gap-2">
-            <button onClick={onClose} className="btn-outline text-xs px-4 py-2">Отмена</button>
+            <button onClick={onClose} className="btn-outline text-xs px-4 py-2" disabled={loading}>Отмена</button>
             <button onClick={submit} disabled={loading || (!text.trim() && !mediaFile)} className="btn-primary text-xs px-4 py-2" style={{ opacity: loading ? 0.7 : 1 }}>
-              {loading ? "Публикация..." : "Опубликовать"}
+              {loading ? <span className="flex items-center gap-1.5"><Icon name="Loader" size={12} className="animate-spin" />{uploadPercent < 90 ? "Загрузка..." : "Публикация..."}</span> : "Опубликовать"}
             </button>
           </div>
         </div>
@@ -576,11 +602,12 @@ function ShareModal({ postId, text, onClose }: { postId: number; text: string; o
 }
 
 // ─── UsersListModal ───────────────────────────────────────────────────────────
-function UsersListModal({ title, users, onClose, onFollowToggle }: {
+function UsersListModal({ title, users, onClose, onFollowToggle, onOpenProfile }: {
   title: string;
   users: { id: number; full_name: string; job_title: string; avatar_url: string; initials: string; is_following?: boolean }[];
   onClose: () => void;
   onFollowToggle?: (uid: number, following: boolean) => void;
+  onOpenProfile?: (uid: number) => void;
 }) {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: "rgba(0,0,0,0.6)" }} onClick={onClose}>
@@ -592,7 +619,9 @@ function UsersListModal({ title, users, onClose, onFollowToggle }: {
         <div className="overflow-y-auto flex-1">
           {users.length === 0 && <div className="text-center py-10 text-sm" style={{ color: "hsl(220,15%,55%)" }}>Пока никого нет</div>}
           {users.map((u) => (
-            <div key={u.id} className="flex items-center gap-3 px-4 py-3 border-b" style={{ borderColor: "hsl(216,20%,94%)" }}>
+            <div key={u.id} className="flex items-center gap-3 px-4 py-3 border-b cursor-pointer hover:bg-gray-50 transition-colors"
+              style={{ borderColor: "hsl(216,20%,94%)" }}
+              onClick={() => { if (onOpenProfile) { onOpenProfile(u.id); onClose(); } }}>
               <Avatar initials={u.initials} avatarUrl={u.avatar_url} size="sm" />
               <div className="flex-1 min-w-0">
                 <div className="font-medium text-sm truncate">{u.full_name}</div>
@@ -600,7 +629,8 @@ function UsersListModal({ title, users, onClose, onFollowToggle }: {
               </div>
               {onFollowToggle && (
                 <button className={u.is_following ? "btn-outline text-xs px-3 py-1" : "btn-primary text-xs px-3 py-1"}
-                  onClick={async () => {
+                  onClick={async (e) => {
+                    e.stopPropagation();
                     const action = u.is_following ? "unfollow" : "follow";
                     const r = await apiPost(SOCIAL_URL, { action, user_id: u.id });
                     if (r.ok) onFollowToggle(u.id, !u.is_following);
@@ -608,6 +638,7 @@ function UsersListModal({ title, users, onClose, onFollowToggle }: {
                   {u.is_following ? "Подписан" : "+"}
                 </button>
               )}
+              {onOpenProfile && <Icon name="ChevronRight" size={14} style={{ color: "hsl(220,15%,65%)" }} />}
             </div>
           ))}
         </div>
@@ -625,11 +656,12 @@ interface PublicUser {
   is_following: boolean; is_me: boolean;
 }
 
-function UserProfilePage({ userId, currentUser, onBack, onOpenChat }: {
+function UserProfilePage({ userId, currentUser, onBack, onOpenChat, onOpenProfile }: {
   userId: number;
   currentUser: User | null;
   onBack: () => void;
   onOpenChat?: (uid: number) => void;
+  onOpenProfile?: (uid: number) => void;
 }) {
   const [profile, setProfile] = useState<PublicUser | null>(null);
   const [posts, setPosts] = useState<Post[]>([]);
@@ -696,7 +728,8 @@ function UserProfilePage({ userId, currentUser, onBack, onOpenChat }: {
       {followersModal && (
         <UsersListModal title={followersModal === "followers" ? "Подписчики" : "Подписки"} users={followUsers}
           onClose={() => setFollowersModal(null)}
-          onFollowToggle={(uid, f) => setFollowUsers((prev) => prev.map((u) => u.id === uid ? { ...u, is_following: f } : u))} />
+          onFollowToggle={(uid, f) => setFollowUsers((prev) => prev.map((u) => u.id === uid ? { ...u, is_following: f } : u))}
+          onOpenProfile={onOpenProfile} />
       )}
 
       <button className="flex items-center gap-2 text-sm mb-4" style={{ color: "hsl(213,80%,40%)" }} onClick={onBack}>
@@ -842,8 +875,10 @@ function GroupDetailPage({ group, currentUser, onBack }: { group: Group; current
   const [mediaFile, setMediaFile] = useState<File | null>(null);
   const [mediaPreview, setMediaPreview] = useState("");
   const [posting, setPosting] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState(0);
   const [mediaViewer, setMediaViewer] = useState<{ url: string; type: string } | null>(null);
   const fileRef = { current: null as HTMLInputElement | null };
+  const docRef = { current: null as HTMLInputElement | null };
 
   useEffect(() => {
     apiPost(SOCIAL_URL, { action: "group_posts", group_id: group.id }).then((r) => setPosts((r.data.posts as GroupPost[]) || []));
@@ -859,21 +894,27 @@ function GroupDetailPage({ group, currentUser, onBack }: { group: Group; current
   const handlePost = async () => {
     if (!newPostText.trim() && !mediaFile) return;
     setPosting(true);
+    setUploadProgress(0);
     let media_url = "", media_type = "";
     if (mediaFile) {
+      setUploadProgress(20);
       const b64 = await readFileAsBase64(mediaFile);
+      setUploadProgress(60);
       const r2 = await apiPost(SOCIAL_URL, { action: "upload_media", file_data: b64, file_type: mediaFile.type });
+      setUploadProgress(90);
       if (r2.ok) { media_url = r2.data.url as string; media_type = r2.data.media_type as string; }
     }
     const r = await apiPost(SOCIAL_URL, { action: "group_post_create", group_id: group.id, text: newPostText.trim(), media_url, media_type });
     setPosting(false);
+    setUploadProgress(0);
     if (r.ok) { setPosts((prev) => [r.data.post as GroupPost, ...prev]); setNewPostText(""); setMediaFile(null); setMediaPreview(""); setShowCreate(false); }
   };
 
   return (
     <div className="max-w-2xl mx-auto px-4 py-4">
       {mediaViewer && <MediaViewer url={mediaViewer.url} type={mediaViewer.type} onClose={() => setMediaViewer(null)} />}
-      <input ref={(el) => { fileRef.current = el; }} type="file" accept="image/*,video/*" className="hidden" onChange={async (e) => { const f = e.target.files?.[0]; if (!f) return; setMediaFile(f); setMediaPreview(await readFileAsBase64(f)); }} />
+      <input ref={(el) => { fileRef.current = el; }} type="file" accept="image/*,video/*" className="hidden" onChange={async (e) => { const f = e.target.files?.[0]; if (!f) return; setMediaFile(f); if (f.type.startsWith("image/")) { setMediaPreview(await readFileAsBase64(f)); } else { setMediaPreview("video"); } }} />
+      <input ref={(el) => { docRef.current = el; }} type="file" accept=".pdf,.doc,.docx,.xls,.xlsx,.txt,.zip,.rar" className="hidden" onChange={async (e) => { const f = e.target.files?.[0]; if (!f) return; setMediaFile(f); setMediaPreview("document"); }} />
 
       <button className="flex items-center gap-2 text-sm mb-4" style={{ color: "hsl(213,80%,40%)" }} onClick={onBack}>
         <Icon name="ArrowLeft" size={16} />Назад
@@ -922,20 +963,47 @@ function GroupDetailPage({ group, currentUser, onBack }: { group: Group; current
                     placeholder="Текст публикации..." value={newPostText} onChange={(e) => setNewPostText(e.target.value)} />
                   {mediaPreview && (
                     <div className="relative mt-2">
-                      {mediaFile?.type.startsWith("video/") ? <video src={mediaPreview} className="w-full max-h-40 rounded-lg" controls /> : <img src={mediaPreview} className="w-full max-h-40 object-cover rounded-lg" />}
+                      {mediaPreview === "video" ? (
+                        <div className="flex items-center gap-2 p-3 rounded-lg" style={{ background: "hsl(216,20%,96%)" }}>
+                          <Icon name="Video" size={18} style={{ color: "hsl(213,80%,40%)" }} />
+                          <span className="text-sm truncate">{mediaFile?.name}</span>
+                        </div>
+                      ) : mediaPreview === "document" ? (
+                        <div className="flex items-center gap-2 p-3 rounded-lg" style={{ background: "hsl(216,20%,96%)" }}>
+                          <Icon name="FileText" size={18} style={{ color: "hsl(213,80%,40%)" }} />
+                          <span className="text-sm truncate">{mediaFile?.name}</span>
+                        </div>
+                      ) : (
+                        <img src={mediaPreview} className="w-full max-h-40 object-cover rounded-lg" />
+                      )}
                       <button className="absolute top-1 right-1 w-6 h-6 rounded-full flex items-center justify-center" style={{ background: "rgba(0,0,0,0.6)", color: "white" }} onClick={() => { setMediaFile(null); setMediaPreview(""); }}>
                         <Icon name="X" size={12} />
                       </button>
                     </div>
                   )}
-                  <div className="flex justify-between mt-2">
-                    <button className="btn-outline text-xs px-3 py-1.5 flex items-center gap-1.5" onClick={() => fileRef.current?.click()}>
-                      <Icon name="Image" size={12} />Фото/Видео
-                    </button>
+                  {posting && uploadProgress > 0 && (
+                    <div className="mt-2">
+                      <div className="flex justify-between text-xs mb-1" style={{ color: "hsl(220,15%,55%)" }}>
+                        <span>Загрузка...</span><span>{uploadProgress}%</span>
+                      </div>
+                      <div className="w-full h-1.5 rounded-full" style={{ background: "hsl(216,20%,90%)" }}>
+                        <div className="h-full rounded-full transition-all" style={{ width: `${uploadProgress}%`, background: "hsl(213,80%,40%)" }} />
+                      </div>
+                    </div>
+                  )}
+                  <div className="flex justify-between mt-2 flex-wrap gap-2">
+                    <div className="flex gap-1.5">
+                      <button className="btn-outline text-xs px-3 py-1.5 flex items-center gap-1.5" onClick={() => fileRef.current?.click()}>
+                        <Icon name="Image" size={12} />Фото/Видео
+                      </button>
+                      <button className="btn-outline text-xs px-3 py-1.5 flex items-center gap-1.5" onClick={() => docRef.current?.click()}>
+                        <Icon name="Paperclip" size={12} />Документ
+                      </button>
+                    </div>
                     <div className="flex gap-2">
                       <button className="btn-outline text-xs px-3 py-1.5" onClick={() => { setShowCreate(false); setNewPostText(""); setMediaFile(null); setMediaPreview(""); }}>Отмена</button>
                       <button className="btn-primary text-xs px-3 py-1.5" onClick={handlePost} disabled={posting}>
-                        {posting ? "Публикация..." : "Опубликовать"}
+                        {posting ? <span className="flex items-center gap-1"><Icon name="Loader" size={12} className="animate-spin" />Отправка...</span> : "Опубликовать"}
                       </button>
                     </div>
                   </div>
@@ -1503,22 +1571,34 @@ function NotificationsPage({ onOpenProfile, cache, setCache, loaded, onLoaded }:
 function SearchPage({ onStartChat, onOpenProfile }: { onStartChat?: (userId: number) => void; onOpenProfile?: (uid: number) => void }) {
   const [query, setQuery] = useState("");
   const [users, setUsers] = useState<SocialUser[]>([]);
+  const [groups, setGroups] = useState<Group[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadingGroups, setLoadingGroups] = useState(true);
   const [tab, setTab] = useState<"people" | "groups">("people");
 
   useEffect(() => {
-    apiGet(SOCIAL_URL, query ? { action: "search_users", q: query } : { action: "search_users" }).then((r) => {
+    apiPost(SOCIAL_URL, { action: "search_users" }).then((r) => {
       setUsers((r.data.users as SocialUser[]) || []);
       setLoading(false);
-    });
+    }).catch(() => setLoading(false));
+    apiPost(SOCIAL_URL, { action: "groups_list" }).then((r) => {
+      setGroups((r.data.groups as Group[]) || []);
+      setLoadingGroups(false);
+    }).catch(() => setLoadingGroups(false));
   }, []);
 
   const handleSearch = async (q: string) => {
     setQuery(q);
     setLoading(true);
-    const r = await apiPost(SOCIAL_URL, { action: "search_users", q });
-    setUsers((r.data.users as SocialUser[]) || []);
+    setLoadingGroups(true);
+    const [rUsers, rGroups] = await Promise.all([
+      apiPost(SOCIAL_URL, { action: "search_users", q }),
+      apiPost(SOCIAL_URL, { action: "groups_list", q }),
+    ]);
+    setUsers((rUsers.data.users as SocialUser[]) || []);
+    setGroups((rGroups.data.groups as Group[]) || []);
     setLoading(false);
+    setLoadingGroups(false);
   };
 
   const toggleFollow = async (u: SocialUser) => {
@@ -1536,7 +1616,7 @@ function SearchPage({ onStartChat, onOpenProfile }: { onStartChat?: (userId: num
         <input
           className="w-full pl-10 pr-4 py-2.5 rounded-lg border text-sm outline-none focus:border-blue-400 transition-all bg-card"
           style={{ borderColor: "hsl(216,20%,85%)", color: "hsl(220,30%,15%)" }}
-          placeholder="Поиск людей по имени или должности..."
+          placeholder={tab === "people" ? "Поиск людей по имени или должности..." : "Поиск групп..."}
           value={query}
           onChange={(e) => handleSearch(e.target.value)}
         />
@@ -1580,22 +1660,25 @@ function SearchPage({ onStartChat, onOpenProfile }: { onStartChat?: (userId: num
 
       {tab === "groups" && (
         <div className="space-y-2">
-          {[
-            { name: "CFO Russia 2026", members: 127, desc: "Сообщество финансовых директоров" },
-            { name: "B2B Sales Masters", members: 894, desc: "Лучшие практики B2B продаж" },
-            { name: "Tech Leadership", members: 2341, desc: "Технологическое лидерство и трансформация" },
-          ].map((g) => (
-            <div key={g.name} className="post-card flex items-center gap-4">
-              <div className="w-10 h-10 rounded-lg flex items-center justify-center text-white text-xs font-bold" style={{ background: getAvatarColor(g.name) }}>
-                {g.name.slice(0, 2)}
+          {loadingGroups && [1, 2].map((i) => <div key={i} className="h-16 rounded-lg shimmer" />)}
+          {!loadingGroups && groups.map((g) => (
+            <div key={g.id} className="post-card flex items-center gap-4">
+              <div className="w-10 h-10 rounded-lg flex items-center justify-center text-white text-xs font-bold flex-shrink-0" style={{ background: getAvatarColor(g.initials) }}>
+                {g.initials}
               </div>
-              <div className="flex-1">
+              <div className="flex-1 min-w-0">
                 <div className="font-medium text-sm">{g.name}</div>
-                <div className="text-xs" style={{ color: "hsl(220,15%,55%)" }}>{g.members.toLocaleString("ru")} участников · {g.desc}</div>
+                <div className="text-xs truncate" style={{ color: "hsl(220,15%,55%)" }}>{g.members_count} участников{g.description ? ` · ${g.description}` : ""}</div>
               </div>
-              <button className="btn-outline text-xs px-3 py-1.5">Вступить</button>
             </div>
           ))}
+          {!loadingGroups && groups.length === 0 && (
+            <div className="text-center py-12" style={{ color: "hsl(220,15%,55%)" }}>
+              <Icon name="Users" size={32} className="mx-auto mb-3 opacity-40" />
+              <div className="text-sm">{query ? "Группы не найдены" : "Пока нет групп"}</div>
+              <div className="text-xs mt-1" style={{ color: "hsl(220,15%,65%)" }}>Создайте группу в разделе «Группы»</div>
+            </div>
+          )}
         </div>
       )}
     </div>
@@ -1702,7 +1785,7 @@ function MessagesPage({ currentUser }: { currentUser: User | null }) {
 
   const ChatWindow = () => (
     activeConv ? (
-      <div className="flex-1 flex flex-col min-w-0 h-full">
+      <div className="flex flex-col min-w-0 h-full" style={{ flex: 1 }}>
         {mediaViewer && <MediaViewer url={mediaViewer.url} type={mediaViewer.type} onClose={() => setMediaViewer(null)} />}
         <div className="px-4 py-3 border-b flex items-center gap-3 bg-card flex-shrink-0" style={{ borderColor: "hsl(216,20%,88%)" }}>
           <button className="md:hidden p-1 rounded" style={{ color: "hsl(213,80%,40%)" }} onClick={() => setShowMobileChat(false)}>
@@ -1781,7 +1864,7 @@ function MessagesPage({ currentUser }: { currentUser: User | null }) {
       <input ref={(el) => { fileRef.current = el; }} type="file" accept="image/*,video/*" className="hidden" onChange={(e) => handleFileSend(e, false)} />
       <input ref={(el) => { docRef.current = el; }} type="file" accept="*/*" className="hidden" onChange={(e) => handleFileSend(e, true)} />
 
-      {/* Desktop: side-by-side */}
+      {/* Список диалогов — скрыт на мобилке когда открыт чат */}
       <div className={`w-full md:w-72 flex-shrink-0 border-r flex flex-col ${showMobileChat ? "hidden md:flex" : "flex"}`} style={{ borderColor: "hsl(216,20%,88%)" }}>
         <div className="px-3 py-3 border-b flex-shrink-0" style={{ borderColor: "hsl(216,20%,88%)" }}>
           <div className="relative">
@@ -1792,8 +1875,9 @@ function MessagesPage({ currentUser }: { currentUser: User | null }) {
         <ConvList />
       </div>
 
-      {/* Chat — full screen on mobile when open */}
-      <div className={`flex-1 flex flex-col min-w-0 ${showMobileChat ? "flex" : "hidden md:flex"}`}>
+      {/* Чат — полный экран на мобилке */}
+      <div className={`flex-1 min-w-0 ${showMobileChat ? "flex flex-col fixed inset-0 z-40 bg-white md:static md:z-auto" : "hidden md:flex md:flex-col"}`}
+        style={showMobileChat ? { paddingBottom: "env(safe-area-inset-bottom, 0px)" } : {}}>
         <ChatWindow />
       </div>
     </div>
@@ -1945,10 +2029,11 @@ function EditProfileModal({
   );
 }
 
-function ProfilePage({ user, onUserUpdate }: { user?: User; onUserUpdate?: (u: User) => void }) {
+function ProfilePage({ user, onUserUpdate, onOpenProfile }: { user?: User; onUserUpdate?: (u: User) => void; onOpenProfile?: (uid: number) => void }) {
   const [editOpen, setEditOpen] = useState(false);
   const [uploadingAvatar, setUploadingAvatar] = useState(false);
   const [uploadingCover, setUploadingCover] = useState(false);
+  const [uploadPercent, setUploadPercent] = useState(0);
   const [stats, setStats] = useState<UserStats | null>(null);
   const [userPosts, setUserPosts] = useState<Post[]>([]);
   const [loadingPosts, setLoadingPosts] = useState(false);
@@ -1976,15 +2061,24 @@ function ProfilePage({ user, onUserUpdate }: { user?: User; onUserUpdate?: (u: U
     });
   }, [user?.id]);
 
+  const uploadWithProgress = async (file: File, action: string, resultKey: string) => {
+    setUploadPercent(10);
+    const b64 = await readFileAsBase64(file);
+    setUploadPercent(50);
+    const r = await apiPost(SOCIAL_URL, { action, file_data: b64, file_type: file.type });
+    setUploadPercent(100);
+    setTimeout(() => setUploadPercent(0), 800);
+    return r.ok ? (r.data[resultKey] as string) : null;
+  };
+
   const handleAvatarUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
     setUploadingAvatar(true);
-    const b64 = await readFileAsBase64(file);
-    const r = await apiPost(SOCIAL_URL, { action: "update_avatar", file_data: b64, file_type: file.type });
+    const url = await uploadWithProgress(file, "update_avatar", "avatar_url");
     setUploadingAvatar(false);
-    if (r.ok && r.data.avatar_url) {
-      const updated = { ...user!, avatar_url: r.data.avatar_url as string };
+    if (url) {
+      const updated = { ...user!, avatar_url: url };
       onUserUpdate?.(updated);
       localStorage.setItem("nexus_user", JSON.stringify(updated));
     }
@@ -1994,11 +2088,10 @@ function ProfilePage({ user, onUserUpdate }: { user?: User; onUserUpdate?: (u: U
     const file = e.target.files?.[0];
     if (!file) return;
     setUploadingCover(true);
-    const b64 = await readFileAsBase64(file);
-    const r = await apiPost(SOCIAL_URL, { action: "upload_cover", file_data: b64, file_type: file.type });
+    const url = await uploadWithProgress(file, "upload_cover", "cover_url");
     setUploadingCover(false);
-    if (r.ok && r.data.cover_url) {
-      const updated = { ...user!, cover_url: r.data.cover_url as string };
+    if (url) {
+      const updated = { ...user!, cover_url: url };
       onUserUpdate?.(updated);
       localStorage.setItem("nexus_user", JSON.stringify(updated));
     }
@@ -2046,6 +2139,7 @@ function ProfilePage({ user, onUserUpdate }: { user?: User; onUserUpdate?: (u: U
           users={followUsers}
           onClose={() => setFollowersModal(null)}
           onFollowToggle={(uid, following) => setFollowUsers((prev) => prev.map((u) => u.id === uid ? { ...u, is_following: following } : u))}
+          onOpenProfile={onOpenProfile}
         />
       )}
     <div className="max-w-3xl mx-auto px-4 py-5">
@@ -2060,6 +2154,14 @@ function ProfilePage({ user, onUserUpdate }: { user?: User; onUserUpdate?: (u: U
               ? <Icon name="Loader" size={24} style={{ color: "white" }} className="animate-spin" />
               : <div className="flex flex-col items-center gap-1"><Icon name="Camera" size={24} style={{ color: "white" }} /><span className="text-xs text-white">Изменить обложку</span></div>}
           </div>
+          {(uploadingAvatar || uploadingCover) && uploadPercent > 0 && (
+            <div className="absolute bottom-0 left-0 right-0 px-4 pb-2">
+              <div className="w-full h-1.5 rounded-full" style={{ background: "rgba(255,255,255,0.3)" }}>
+                <div className="h-full rounded-full transition-all duration-300" style={{ width: `${uploadPercent}%`, background: "white" }} />
+              </div>
+              <div className="text-xs text-white text-center mt-0.5">{uploadPercent}%</div>
+            </div>
+          )}
         </div>
 
         <div className="px-5 pb-5">
@@ -2270,9 +2372,9 @@ function AdminPage() {
         <h1 className="font-bold text-lg">Панель администратора</h1>
       </div>
 
-      <div className="flex gap-2 mb-5">
+      <div className="flex gap-2 mb-5 overflow-x-auto pb-1">
         {(["stats", "users", "posts"] as const).map((t) => (
-          <button key={t} onClick={() => setTab(t)} className={tab === t ? "btn-primary text-xs px-4 py-2" : "btn-outline text-xs px-4 py-2"}>
+          <button key={t} onClick={() => setTab(t)} className={`flex-shrink-0 ${tab === t ? "btn-primary text-xs px-4 py-2" : "btn-outline text-xs px-4 py-2"}`}>
             {{ stats: "Статистика", users: "Пользователи", posts: "Посты" }[t]}
           </button>
         ))}
@@ -2298,43 +2400,45 @@ function AdminPage() {
 
       {tab === "users" && data && (
         <div className="post-card overflow-hidden p-0">
-          <table className="w-full text-sm">
-            <thead>
-              <tr style={{ background: "hsl(216,20%,96%)" }}>
-                <th className="text-left px-4 py-3 text-xs font-semibold" style={{ color: "hsl(220,15%,50%)" }}>Пользователь</th>
-                <th className="text-left px-4 py-3 text-xs font-semibold" style={{ color: "hsl(220,15%,50%)" }}>Email</th>
-                <th className="text-center px-4 py-3 text-xs font-semibold" style={{ color: "hsl(220,15%,50%)" }}>Постов</th>
-                <th className="text-center px-4 py-3 text-xs font-semibold" style={{ color: "hsl(220,15%,50%)" }}>Подп.</th>
-                <th className="text-center px-4 py-3 text-xs font-semibold" style={{ color: "hsl(220,15%,50%)" }}>Действия</th>
-              </tr>
-            </thead>
-            <tbody>
-              {(data.users as { id: number; email: string; full_name: string; job_title: string; is_admin: boolean; posts_count: number; followers_count: number }[]).map((u) => (
-                <tr key={u.id} className="border-t" style={{ borderColor: "hsl(216,20%,92%)" }}>
-                  <td className="px-4 py-3">
-                    <div className="font-medium text-sm">{u.full_name}</div>
-                    <div className="text-xs" style={{ color: "hsl(220,15%,55%)" }}>{u.job_title || "—"}</div>
-                  </td>
-                  <td className="px-4 py-3 text-xs" style={{ color: "hsl(220,15%,55%)" }}>{u.email}</td>
-                  <td className="px-4 py-3 text-center text-sm">{u.posts_count}</td>
-                  <td className="px-4 py-3 text-center text-sm">{u.followers_count}</td>
-                  <td className="px-4 py-3">
-                    <div className="flex items-center justify-center gap-2">
-                      <button title={u.is_admin ? "Снять права" : "Сделать админом"}
-                        className="text-xs px-2 py-1 rounded" style={{ background: u.is_admin ? "hsl(0,80%,95%)" : "hsl(216,20%,94%)", color: u.is_admin ? "hsl(0,72%,45%)" : "hsl(220,15%,45%)" }}
-                        onClick={() => toggleAdmin(u.id)}>
-                        <Icon name={u.is_admin ? "ShieldOff" : "Shield"} size={12} />
-                      </button>
-                      <button title="Удалить" className="text-xs px-2 py-1 rounded" style={{ background: "hsl(0,80%,95%)", color: "hsl(0,72%,45%)" }}
-                        onClick={() => deleteUser(u.id, u.full_name)}>
-                        <Icon name="Trash2" size={12} />
-                      </button>
-                    </div>
-                  </td>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm" style={{ minWidth: 480 }}>
+              <thead>
+                <tr style={{ background: "hsl(216,20%,96%)" }}>
+                  <th className="text-left px-4 py-3 text-xs font-semibold whitespace-nowrap" style={{ color: "hsl(220,15%,50%)" }}>Пользователь</th>
+                  <th className="text-left px-4 py-3 text-xs font-semibold whitespace-nowrap" style={{ color: "hsl(220,15%,50%)" }}>Email</th>
+                  <th className="text-center px-3 py-3 text-xs font-semibold whitespace-nowrap" style={{ color: "hsl(220,15%,50%)" }}>Постов</th>
+                  <th className="text-center px-3 py-3 text-xs font-semibold whitespace-nowrap" style={{ color: "hsl(220,15%,50%)" }}>Подп.</th>
+                  <th className="text-center px-3 py-3 text-xs font-semibold whitespace-nowrap" style={{ color: "hsl(220,15%,50%)" }}>Действия</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {(data.users as { id: number; email: string; full_name: string; job_title: string; is_admin: boolean; posts_count: number; followers_count: number }[]).map((u) => (
+                  <tr key={u.id} className="border-t" style={{ borderColor: "hsl(216,20%,92%)" }}>
+                    <td className="px-4 py-3">
+                      <div className="font-medium text-sm whitespace-nowrap">{u.full_name}</div>
+                      <div className="text-xs" style={{ color: "hsl(220,15%,55%)" }}>{u.job_title || "—"}</div>
+                    </td>
+                    <td className="px-4 py-3 text-xs whitespace-nowrap" style={{ color: "hsl(220,15%,55%)" }}>{u.email}</td>
+                    <td className="px-3 py-3 text-center text-sm">{u.posts_count}</td>
+                    <td className="px-3 py-3 text-center text-sm">{u.followers_count}</td>
+                    <td className="px-3 py-3">
+                      <div className="flex items-center justify-center gap-2">
+                        <button title={u.is_admin ? "Снять права" : "Сделать админом"}
+                          className="text-xs px-2 py-1 rounded" style={{ background: u.is_admin ? "hsl(0,80%,95%)" : "hsl(216,20%,94%)", color: u.is_admin ? "hsl(0,72%,45%)" : "hsl(220,15%,45%)" }}
+                          onClick={() => toggleAdmin(u.id)}>
+                          <Icon name={u.is_admin ? "ShieldOff" : "Shield"} size={12} />
+                        </button>
+                        <button title="Удалить" className="text-xs px-2 py-1 rounded" style={{ background: "hsl(0,80%,95%)", color: "hsl(0,72%,45%)" }}
+                          onClick={() => deleteUser(u.id, u.full_name)}>
+                          <Icon name="Trash2" size={12} />
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </div>
       )}
 
@@ -2519,6 +2623,7 @@ export default function Index() {
         <main className="flex-1 overflow-y-auto pb-16 md:pb-0">
           <UserProfilePage userId={viewingUserId} currentUser={currentUser}
             onBack={() => setViewingUserId(null)}
+            onOpenProfile={(uid) => setViewingUserId(uid)}
             onOpenChat={async (uid) => {
               const r = await apiPost(SOCIAL_URL, { action: "chat_start", partner_id: uid });
               if (r.ok) { setViewingUserId(null); setActive("messages"); }
@@ -2547,7 +2652,7 @@ export default function Index() {
         if (r.ok) setActive("messages");
       }} onOpenProfile={openUserProfile} />;
       case "messages": return <MessagesPage currentUser={currentUser} />;
-      case "profile": return <ProfilePage user={currentUser} onUserUpdate={(u) => { setCurrentUser(u); localStorage.setItem("nexus_user", JSON.stringify(u)); }} />;
+      case "profile": return <ProfilePage user={currentUser} onUserUpdate={(u) => { setCurrentUser(u); localStorage.setItem("nexus_user", JSON.stringify(u)); }} onOpenProfile={openUserProfile} />;
       case "admin": return <AdminPage />;
     }
   };
@@ -2558,10 +2663,10 @@ export default function Index() {
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
             <div className="w-8 h-8 rounded flex items-center justify-center" style={{ background: "hsl(213,80%,42%)" }}>
-              <span className="text-white font-bold text-sm font-mono-ibm">N</span>
+              <span className="text-white font-bold text-sm font-mono-ibm">C</span>
             </div>
             <div>
-              <div className="text-white font-semibold tracking-widest text-sm">NEXUS</div>
+              <div className="text-white font-semibold tracking-widest text-sm">CLANSE</div>
               <div className="text-xs" style={{ color: "hsl(214,25%,48%)" }}>Деловая сеть</div>
             </div>
           </div>
