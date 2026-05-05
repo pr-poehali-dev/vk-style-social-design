@@ -392,55 +392,6 @@ def handler(event: dict, context) -> dict:
         media_kind = "video" if file_type.startswith("video/") else "image"
         return ok({"url": f"{cdn_base}/{key}", "media_type": media_kind})
 
-    # --- upload cover ---
-    if action == "upload_cover":
-        if not token: return err(401, "Не авторизован")
-        file_data = body.get("file_data", "")
-        file_type = body.get("file_type", "image/jpeg")
-        if not file_data: return err(400, "Файл не передан")
-        if "," in file_data: file_data = file_data.split(",", 1)[1]
-        try: data_bytes = base64.b64decode(file_data)
-        except: return err(400, "Ошибка декодирования")
-        if len(data_bytes) > 10 * 1024 * 1024: return err(400, "Обложка не более 10 МБ")
-        ext = mimetypes.guess_extension(file_type) or ".jpg"
-        if ext == ".jpe": ext = ".jpg"
-        key = f"nexus/covers/{uuid.uuid4().hex}{ext}"
-        s3 = get_s3()
-        s3.put_object(Bucket=BUCKET, Key=key, Body=data_bytes, ContentType=file_type)
-        url = f"{cdn_base}/{key}"
-        conn = get_conn(); cur = conn.cursor()
-        user = get_user_by_token(cur, token)
-        if not user: conn.close(); return err(401, "Сессия истекла")
-        cur.execute(f"UPDATE {SCHEMA}.users SET cover_url=%s WHERE id=%s", (url, user[0]))
-        conn.commit(); conn.close()
-        return ok({"cover_url": url})
-
-    # --- get profile by user id (чужой профиль) ---
-    if action == "get_profile_by_id":
-        uid = body.get("user_id") or qs.get("user_id")
-        if not uid: return err(400, "user_id обязателен")
-        conn = get_conn(); cur = conn.cursor()
-        viewer_id = None
-        if token:
-            u = get_user_by_token(cur, token)
-            if u: viewer_id = u[0]
-        cur.execute(f"""SELECT u.id, u.full_name, u.job_title, u.bio, u.avatar_url,
-            u.social_vk, u.social_tg, u.social_linkedin, u.social_instagram, u.cover_url
-            FROM {SCHEMA}.users u WHERE u.id=%s""", (int(uid),))
-        row = cur.fetchone()
-        if not row: conn.close(); return err(404, "Пользователь не найден")
-        stats = get_user_stats(cur, int(uid))
-        is_following = False
-        if viewer_id and viewer_id != int(uid):
-            cur.execute(f"SELECT 1 FROM {SCHEMA}.follows WHERE follower_id=%s AND following_id=%s", (viewer_id, int(uid)))
-            is_following = cur.fetchone() is not None
-        conn.close()
-        return ok({"id": row[0], "full_name": row[1], "job_title": row[2] or "",
-            "bio": row[3] or "", "avatar_url": row[4] or "", "cover_url": row[9] or "",
-            "social_vk": row[5] or "", "social_tg": row[6] or "",
-            "social_linkedin": row[7] or "", "social_instagram": row[8] or "",
-            "stats": stats, "is_following": is_following, "is_me": viewer_id == int(uid)})
-
     # --- update avatar ---
     if action == "update_avatar":
         if not token: return err(401, "Не авторизован")
@@ -481,7 +432,7 @@ def handler(event: dict, context) -> dict:
         if not token: return err(401, "Не авторизован")
         conn = get_conn(); cur = conn.cursor()
         cur.execute(f"""SELECT u.id, u.email, u.full_name, u.job_title, u.bio, u.avatar_url,
-            u.social_vk, u.social_tg, u.social_linkedin, u.social_instagram, u.cover_url
+            u.social_vk, u.social_tg, u.social_linkedin, u.social_instagram
             FROM {SCHEMA}.sessions s JOIN {SCHEMA}.users u ON u.id=s.user_id
             WHERE s.token=%s AND s.expires_at>NOW()""", (token,))
         row = cur.fetchone()
@@ -489,7 +440,7 @@ def handler(event: dict, context) -> dict:
         stats = get_user_stats(cur, row[0])
         conn.close()
         return ok({"id": row[0], "email": row[1], "full_name": row[2], "job_title": row[3] or "",
-            "bio": row[4] or "", "avatar_url": row[5] or "", "cover_url": row[10] or "",
+            "bio": row[4] or "", "avatar_url": row[5] or "",
             "social_vk": row[6] or "", "social_tg": row[7] or "",
             "social_linkedin": row[8] or "", "social_instagram": row[9] or "",
             "stats": stats})
