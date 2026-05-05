@@ -65,7 +65,6 @@ interface PostAuthor {
   full_name: string;
   job_title: string;
   initials: string;
-  avatar_url?: string;
 }
 
 interface Post {
@@ -75,21 +74,9 @@ interface Post {
   likes_count: number;
   comments_count: number;
   views_count: number;
-  share_count: number;
   created_at: string;
   author: PostAuthor;
   liked: boolean;
-  is_mine: boolean;
-  media_url?: string;
-  media_type?: string;
-}
-
-interface UserStats {
-  followers: number;
-  following: number;
-  posts: number;
-  views: number;
-  reach: number;
 }
 
 function timeAgo(dateStr: string): string {
@@ -106,42 +93,6 @@ interface User {
   full_name: string;
   job_title: string;
   bio: string;
-  avatar_url?: string;
-  cover_url?: string;
-  social_vk?: string;
-  social_tg?: string;
-  social_linkedin?: string;
-  social_instagram?: string;
-}
-
-interface ChatMessage {
-  id: number;
-  sender_id: number;
-  text: string;
-  media_url: string;
-  media_type: string;
-  created_at: string;
-  sender_name: string;
-  sender_initials: string;
-  sender_avatar: string;
-  is_me: boolean;
-}
-
-interface Conversation {
-  id: number;
-  partner: { id: number; full_name: string; job_title: string; initials: string; avatar_url: string };
-  last_message: string;
-  last_at: string;
-}
-
-// Утилита: чтение файла как base64
-function readFileAsBase64(file: File): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(reader.result as string);
-    reader.onerror = reject;
-    reader.readAsDataURL(file);
-  });
 }
 
 async function apiAuth(action: string, data: Record<string, string>) {
@@ -160,157 +111,148 @@ async function apiAuth(action: string, data: Record<string, string>) {
 }
 
 function AuthScreen({ onAuth }: { onAuth: (user: User, token: string) => void }) {
-  const [mode, setMode] = useState<"login" | "register" | "reset" | "reset_confirm">("login");
+  const [mode, setMode] = useState<"login" | "register">("login");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [fullName, setFullName] = useState("");
   const [jobTitle, setJobTitle] = useState("");
-  const [resetCode, setResetCode] = useState("");
-  const [newPassword, setNewPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
-  const [success, setSuccess] = useState("");
-
-  const inp = "w-full px-3.5 py-2.5 rounded-lg text-sm outline-none transition-all";
-  const inpStyle = { background: "hsl(221,35%,10%)", border: "1px solid hsl(221,25%,25%)", color: "hsl(214,30%,90%)" };
-  const lbl = "block text-xs font-medium mb-1.5";
-  const lblStyle = { color: "hsl(214,25%,65%)" };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setError(""); setSuccess("");
+    setError("");
     setLoading(true);
-
-    if (mode === "reset") {
-      const r = await apiAuth("reset_password_request", { email });
-      setLoading(false);
-      if (!r.ok) { setError(r.data?.error as string || "Ошибка"); return; }
-      setSuccess(`Код отправлен. Ваш код: ${r.data?.code}`);
-      setMode("reset_confirm");
-      return;
-    }
-
-    if (mode === "reset_confirm") {
-      const r = await apiAuth("reset_password_confirm", { email, code: resetCode, new_password: newPassword });
-      setLoading(false);
-      if (!r.ok) { setError(r.data?.error as string || "Неверный код"); return; }
-      const token = r.data?.token; const user = r.data?.user;
-      if (token && user) { localStorage.setItem("nexus_token", token as string); localStorage.setItem("nexus_user", JSON.stringify(user)); onAuth(user as User, token as string); }
-      return;
-    }
-
     const result = await apiAuth(mode, { email, password, full_name: fullName, job_title: jobTitle });
     setLoading(false);
-    if (!result.ok) { setError(result.data?.error as string || "Произошла ошибка"); return; }
-    const token = result.data?.token; const user = result.data?.user;
+    if (!result.ok) {
+      setError(result.data?.error || "Произошла ошибка");
+      return;
+    }
+    const token = result.data?.token;
+    const user = result.data?.user;
     if (token && user) {
-      localStorage.setItem("nexus_token", token as string);
+      localStorage.setItem("nexus_token", token);
       localStorage.setItem("nexus_user", JSON.stringify(user));
-      onAuth(user as User, token as string);
+      onAuth(user, token);
     }
   };
 
-  const tabLabel: Record<string, string> = { login: "Вход", register: "Регистрация", reset: "Забыли пароль?", reset_confirm: "Новый пароль" };
-  const btnLabel: Record<string, string> = { login: "Войти", register: "Создать аккаунт", reset: "Получить код", reset_confirm: "Сохранить пароль" };
-
   return (
-    <div className="min-h-screen flex items-center justify-center p-4" style={{ background: "hsl(221,35%,12%)" }}>
-      <div className="w-full max-w-md">
+    <div className="min-h-screen flex items-center justify-center" style={{ background: "hsl(221,35%,12%)" }}>
+      <div className="w-full max-w-md px-4">
         <div className="text-center mb-8">
           <div className="inline-flex items-center justify-center w-12 h-12 rounded-lg mb-4" style={{ background: "hsl(213,80%,42%)" }}>
-            <span className="text-white font-bold text-lg">N</span>
+            <span className="text-white font-bold text-lg font-mono-ibm">N</span>
           </div>
           <h1 className="text-white font-semibold tracking-widest text-xl">NEXUS</h1>
           <p className="text-sm mt-1" style={{ color: "hsl(214,25%,55%)" }}>Деловая профессиональная сеть</p>
         </div>
 
-        <div className="rounded-xl p-6 md:p-8" style={{ background: "hsl(221,30%,16%)", border: "1px solid hsl(221,25%,22%)" }}>
-          {mode !== "reset_confirm" && (
-            <div className="flex rounded-lg mb-6 p-1" style={{ background: "hsl(221,35%,10%)" }}>
-              {(["login", "register"] as const).map((m) => (
-                <button key={m} onClick={() => { setMode(m); setError(""); setSuccess(""); }}
-                  className="flex-1 py-2 rounded-md text-sm font-medium transition-all"
-                  style={mode === m ? { background: "hsl(213,80%,40%)", color: "white" } : { color: "hsl(214,25%,55%)" }}>
-                  {m === "login" ? "Вход" : "Регистрация"}
-                </button>
-              ))}
-            </div>
-          )}
-
-          {(mode === "reset" || mode === "reset_confirm") && (
-            <div className="flex items-center gap-2 mb-5">
-              <button onClick={() => { setMode("login"); setError(""); setSuccess(""); }} style={{ color: "hsl(214,25%,55%)" }}>
-                <Icon name="ArrowLeft" size={16} />
+        <div className="rounded-xl p-8" style={{ background: "hsl(221,30%,16%)", border: "1px solid hsl(221,25%,22%)" }}>
+          <div className="flex rounded-lg mb-6 p-1" style={{ background: "hsl(221,35%,10%)" }}>
+            {(["login", "register"] as const).map((m) => (
+              <button
+                key={m}
+                onClick={() => { setMode(m); setError(""); }}
+                className="flex-1 py-2 rounded-md text-sm font-medium transition-all"
+                style={mode === m
+                  ? { background: "hsl(213,80%,40%)", color: "white" }
+                  : { color: "hsl(214,25%,55%)" }
+                }
+              >
+                {m === "login" ? "Вход" : "Регистрация"}
               </button>
-              <h3 className="font-semibold text-sm text-white">{tabLabel[mode]}</h3>
-            </div>
-          )}
+            ))}
+          </div>
 
           <form onSubmit={handleSubmit} className="space-y-4">
             {mode === "register" && (
               <>
-                <div><label className={lbl} style={lblStyle}>Имя и фамилия *</label>
-                  <input className={inp} style={inpStyle} placeholder="Андрей Козлов" value={fullName} onChange={(e) => setFullName(e.target.value)} required /></div>
-                <div><label className={lbl} style={lblStyle}>Должность</label>
-                  <input className={inp} style={inpStyle} placeholder="Директор по развитию" value={jobTitle} onChange={(e) => setJobTitle(e.target.value)} /></div>
+                <div>
+                  <label className="block text-xs font-medium mb-1.5" style={{ color: "hsl(214,25%,65%)" }}>Имя и фамилия *</label>
+                  <input
+                    className="w-full px-3.5 py-2.5 rounded-lg text-sm outline-none transition-all"
+                    style={{ background: "hsl(221,35%,10%)", border: "1px solid hsl(221,25%,25%)", color: "hsl(214,30%,90%)" }}
+                    placeholder="Андрей Козлов"
+                    value={fullName}
+                    onChange={(e) => setFullName(e.target.value)}
+                    required
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium mb-1.5" style={{ color: "hsl(214,25%,65%)" }}>Должность</label>
+                  <input
+                    className="w-full px-3.5 py-2.5 rounded-lg text-sm outline-none transition-all"
+                    style={{ background: "hsl(221,35%,10%)", border: "1px solid hsl(221,25%,25%)", color: "hsl(214,30%,90%)" }}
+                    placeholder="Директор по развитию"
+                    value={jobTitle}
+                    onChange={(e) => setJobTitle(e.target.value)}
+                  />
+                </div>
               </>
             )}
 
-            {(mode === "login" || mode === "register" || mode === "reset" || mode === "reset_confirm") && (
-              <div><label className={lbl} style={lblStyle}>Email *</label>
-                <input type="email" className={inp} style={inpStyle} placeholder="email@company.ru" value={email} onChange={(e) => setEmail(e.target.value)} required disabled={mode === "reset_confirm"} /></div>
-            )}
+            <div>
+              <label className="block text-xs font-medium mb-1.5" style={{ color: "hsl(214,25%,65%)" }}>Email *</label>
+              <input
+                type="email"
+                className="w-full px-3.5 py-2.5 rounded-lg text-sm outline-none transition-all"
+                style={{ background: "hsl(221,35%,10%)", border: "1px solid hsl(221,25%,25%)", color: "hsl(214,30%,90%)" }}
+                placeholder="email@company.ru"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                required
+              />
+            </div>
 
-            {(mode === "login" || mode === "register") && (
-              <div>
-                <label className={lbl} style={lblStyle}>Пароль *</label>
-                <input type="password" className={inp} style={inpStyle} placeholder={mode === "register" ? "Минимум 6 символов" : "Введите пароль"} value={password} onChange={(e) => setPassword(e.target.value)} required />
+            <div>
+              <label className="block text-xs font-medium mb-1.5" style={{ color: "hsl(214,25%,65%)" }}>Пароль *</label>
+              <input
+                type="password"
+                className="w-full px-3.5 py-2.5 rounded-lg text-sm outline-none transition-all"
+                style={{ background: "hsl(221,35%,10%)", border: "1px solid hsl(221,25%,25%)", color: "hsl(214,30%,90%)" }}
+                placeholder={mode === "register" ? "Минимум 6 символов" : "Введите пароль"}
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                required
+              />
+            </div>
+
+            {error && (
+              <div className="px-3.5 py-2.5 rounded-lg text-sm" style={{ background: "hsl(0,60%,18%)", color: "hsl(0,80%,75%)", border: "1px solid hsl(0,60%,28%)" }}>
+                {error}
               </div>
             )}
 
-            {mode === "reset_confirm" && (
-              <>
-                <div><label className={lbl} style={lblStyle}>Код из письма</label>
-                  <input className={inp} style={inpStyle} placeholder="ABC123" value={resetCode} onChange={(e) => setResetCode(e.target.value.toUpperCase())} required maxLength={6} /></div>
-                <div><label className={lbl} style={lblStyle}>Новый пароль *</label>
-                  <input type="password" className={inp} style={inpStyle} placeholder="Минимум 6 символов" value={newPassword} onChange={(e) => setNewPassword(e.target.value)} required /></div>
-              </>
-            )}
-
-            {error && <div className="px-3.5 py-2.5 rounded-lg text-sm" style={{ background: "hsl(0,60%,18%)", color: "hsl(0,80%,75%)", border: "1px solid hsl(0,60%,28%)" }}>{error}</div>}
-            {success && <div className="px-3.5 py-2.5 rounded-lg text-sm" style={{ background: "hsl(142,50%,18%)", color: "hsl(142,80%,70%)", border: "1px solid hsl(142,50%,28%)" }}>{success}</div>}
-
-            <button type="submit" disabled={loading} className="w-full py-2.5 rounded-lg text-sm font-semibold transition-all mt-2"
-              style={{ background: loading ? "hsl(213,60%,32%)" : "hsl(213,80%,40%)", color: "white", cursor: loading ? "not-allowed" : "pointer" }}>
-              {loading ? "Подождите..." : btnLabel[mode]}
+            <button
+              type="submit"
+              disabled={loading}
+              className="w-full py-2.5 rounded-lg text-sm font-semibold transition-all mt-2"
+              style={{ background: loading ? "hsl(213,60%,32%)" : "hsl(213,80%,40%)", color: "white", cursor: loading ? "not-allowed" : "pointer" }}
+            >
+              {loading ? "Подождите..." : mode === "login" ? "Войти" : "Создать аккаунт"}
             </button>
-
-            {mode === "login" && (
-              <button type="button" className="w-full text-xs py-1 transition-opacity hover:opacity-80" style={{ color: "hsl(214,25%,50%)" }}
-                onClick={() => { setMode("reset"); setError(""); setSuccess(""); }}>
-                Забыли пароль?
-              </button>
-            )}
           </form>
         </div>
 
-        <p className="text-center text-xs mt-4" style={{ color: "hsl(214,25%,40%)" }}>Nexus © 2026 · Деловая профессиональная сеть</p>
+        <p className="text-center text-xs mt-4" style={{ color: "hsl(214,25%,40%)" }}>
+          Nexus © 2026 · Деловая профессиональная сеть
+        </p>
       </div>
     </div>
   );
 }
 
-type Section = "feed" | "friends" | "notifications" | "search" | "messages" | "profile" | "admin" | "groups";
+type Section = "feed" | "friends" | "notifications" | "search" | "messages" | "profile";
 
-const navItems: { id: Section; label: string; icon: string; adminOnly?: boolean }[] = [
+const navItems: { id: Section; label: string; icon: string }[] = [
   { id: "feed", label: "Главная", icon: "LayoutDashboard" },
   { id: "friends", label: "Контакты", icon: "Users" },
-  { id: "groups", label: "Группы", icon: "Globe" },
   { id: "notifications", label: "Уведомления", icon: "Bell" },
   { id: "search", label: "Поиск", icon: "Search" },
   { id: "messages", label: "Сообщения", icon: "MessageSquare" },
   { id: "profile", label: "Профиль", icon: "User" },
-  { id: "admin", label: "Админ", icon: "Shield", adminOnly: true },
 ];
 
 const contacts = [
@@ -365,18 +307,8 @@ function getAvatarColor(initials: string) {
   return avatarColors[idx];
 }
 
-function Avatar({ initials, avatarUrl, size = "md" }: { initials: string; avatarUrl?: string; size?: "sm" | "md" | "lg" }) {
+function Avatar({ initials, size = "md" }: { initials: string; size?: "sm" | "md" | "lg" }) {
   const sizes = { sm: "w-8 h-8 text-xs", md: "w-10 h-10 text-sm", lg: "w-16 h-16 text-base" };
-  if (avatarUrl) {
-    return (
-      <img
-        src={avatarUrl}
-        alt={initials}
-        className={`${sizes[size]} rounded-full object-cover flex-shrink-0`}
-        onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }}
-      />
-    );
-  }
   return (
     <div
       className={`${sizes[size]} rounded-full flex items-center justify-center font-semibold text-white flex-shrink-0`}
@@ -392,34 +324,23 @@ function CreatePostModal({ userInitials, onClose, onCreated }: { userInitials: s
   const [tags, setTags] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
-  const [mediaPreview, setMediaPreview] = useState<string>("");
-  const [mediaFile, setMediaFile] = useState<File | null>(null);
-  const fileInputRef = { current: null as HTMLInputElement | null };
-
-  const handleMediaSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    if (file.size > 50 * 1024 * 1024) { setError("Файл не более 50 МБ"); return; }
-    setMediaFile(file);
-    const b64 = await readFileAsBase64(file);
-    setMediaPreview(b64);
-  };
 
   const submit = async () => {
-    if (!text.trim() && !mediaFile) { setError("Введите текст или добавьте медиа"); return; }
+    if (!text.trim()) { setError("Введите текст поста"); return; }
     setLoading(true); setError("");
-    let media_url = "", media_type = "";
-    if (mediaFile) {
-      const b64 = await readFileAsBase64(mediaFile);
-      const r = await apiPost(SOCIAL_URL, { action: "upload_media", file_data: b64, file_type: mediaFile.type });
-      if (!r.ok) { setError((r.data.error as string) || "Ошибка загрузки файла"); setLoading(false); return; }
-      media_url = r.data.url as string;
-      media_type = r.data.media_type as string;
-    }
-    const r = await apiPost(POSTS_URL, { action: "create", text: text.trim(), tags: tags.trim(), media_url, media_type });
+    const token = localStorage.getItem("nexus_token") || "";
+    const res = await fetch(POSTS_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "X-Auth-Token": token },
+      body: JSON.stringify({ action: "create", text: text.trim(), tags: tags.trim() }),
+    });
+    const raw = await res.text();
+    let json: Record<string, unknown> = {};
+    try { json = JSON.parse(raw); } catch { /* ignore */ }
+    if (typeof json === "string") { try { json = JSON.parse(json as string); } catch { /* ignore */ } }
     setLoading(false);
-    if (!r.ok) { setError((r.data.error as string) || "Ошибка создания поста"); return; }
-    onCreated(r.data.post as Post);
+    if (!res.ok) { setError((json.error as string) || "Ошибка создания поста"); return; }
+    onCreated((json.post as Post));
     onClose();
   };
 
@@ -429,7 +350,6 @@ function CreatePostModal({ userInitials, onClose, onCreated }: { userInitials: s
       style={{ background: "rgba(10,15,30,0.7)", backdropFilter: "blur(4px)" }}
       onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
     >
-      <input ref={(el) => { fileInputRef.current = el; }} type="file" accept="image/*,video/*" className="hidden" onChange={handleMediaSelect} />
       <div className="w-full max-w-lg rounded-xl p-6 section-enter" style={{ background: "hsl(0,0%,100%)", border: "1px solid hsl(216,20%,88%)" }}>
         <div className="flex items-center justify-between mb-4">
           <h2 className="font-semibold text-base">Новая публикация</h2>
@@ -441,30 +361,13 @@ function CreatePostModal({ userInitials, onClose, onCreated }: { userInitials: s
           <Avatar initials={userInitials} />
           <textarea
             className="flex-1 px-3 py-2.5 rounded-lg border text-sm outline-none focus:border-blue-400 transition-all resize-none"
-            style={{ borderColor: "hsl(216,20%,85%)", color: "hsl(220,30%,15%)", minHeight: 100 }}
+            style={{ borderColor: "hsl(216,20%,85%)", color: "hsl(220,30%,15%)", minHeight: 120 }}
             placeholder="Поделитесь профессиональными мыслями, новостями или опытом..."
             value={text}
             onChange={(e) => setText(e.target.value)}
             autoFocus
           />
         </div>
-
-        {/* Media preview */}
-        {mediaPreview && (
-          <div className="relative mb-3 rounded-lg overflow-hidden">
-            {mediaFile?.type.startsWith("video/") ? (
-              <video src={mediaPreview} className="w-full max-h-48 object-cover" controls />
-            ) : (
-              <img src={mediaPreview} alt="preview" className="w-full max-h-48 object-cover rounded-lg" />
-            )}
-            <button onClick={() => { setMediaPreview(""); setMediaFile(null); }}
-              className="absolute top-2 right-2 w-7 h-7 rounded-full flex items-center justify-center"
-              style={{ background: "rgba(0,0,0,0.6)", color: "white" }}>
-              <Icon name="X" size={14} />
-            </button>
-          </div>
-        )}
-
         <div className="mb-4">
           <input
             className="w-full px-3.5 py-2 rounded-lg border text-sm outline-none focus:border-blue-400 transition-all"
@@ -478,14 +381,10 @@ function CreatePostModal({ userInitials, onClose, onCreated }: { userInitials: s
           <div className="px-3 py-2 rounded-lg text-sm mb-3" style={{ background: "hsl(0,80%,97%)", color: "hsl(0,72%,40%)", border: "1px solid hsl(0,72%,88%)" }}>{error}</div>
         )}
         <div className="flex justify-between items-center">
-          <div className="flex gap-2">
-            <button onClick={() => fileInputRef.current?.click()} className="btn-outline text-xs px-3 py-1.5 flex items-center gap-1.5">
-              <Icon name="Image" size={13} />Фото/Видео
-            </button>
-          </div>
+          <span className="text-xs" style={{ color: text.length > 2800 ? "hsl(0,72%,51%)" : "hsl(220,15%,60%)" }}>{text.length} / 3000</span>
           <div className="flex gap-2">
             <button onClick={onClose} className="btn-outline text-xs px-4 py-2">Отмена</button>
-            <button onClick={submit} disabled={loading || (!text.trim() && !mediaFile)} className="btn-primary text-xs px-4 py-2" style={{ opacity: loading ? 0.7 : 1 }}>
+            <button onClick={submit} disabled={loading || !text.trim()} className="btn-primary text-xs px-4 py-2" style={{ opacity: loading ? 0.7 : 1 }}>
               {loading ? "Публикация..." : "Опубликовать"}
             </button>
           </div>
@@ -495,590 +394,17 @@ function CreatePostModal({ userInitials, onClose, onCreated }: { userInitials: s
   );
 }
 
-// ─── MediaViewer ──────────────────────────────────────────────────────────────
-function MediaViewer({ url, type, onClose }: { url: string; type: string; onClose: () => void }) {
-  useEffect(() => {
-    const handle = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
-    document.addEventListener("keydown", handle);
-    return () => document.removeEventListener("keydown", handle);
-  }, [onClose]);
-  return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center" style={{ background: "rgba(0,0,0,0.95)" }} onClick={onClose}>
-      <button className="absolute top-4 right-4 w-10 h-10 rounded-full flex items-center justify-center z-10" style={{ background: "rgba(255,255,255,0.15)", color: "white" }} onClick={onClose}>
-        <Icon name="X" size={20} />
-      </button>
-      <div onClick={(e) => e.stopPropagation()} className="max-w-full max-h-full flex items-center justify-center p-4">
-        {type === "video"
-          ? <video src={url} controls autoPlay className="max-w-screen max-h-screen rounded-lg" style={{ maxWidth: "95vw", maxHeight: "90vh" }} />
-          : <img src={url} alt="media" className="rounded-lg" style={{ maxWidth: "95vw", maxHeight: "90vh", objectFit: "contain" }} />}
-      </div>
-    </div>
-  );
-}
-
-// ─── ShareModal ───────────────────────────────────────────────────────────────
-function ShareModal({ postId, text, onClose }: { postId: number; text: string; onClose: () => void }) {
-  const url = window.location.href;
-  const shortText = text ? text.slice(0, 80) : "Пост из NEXUS";
-  const socials = [
-    { name: "ВКонтакте", icon: "Globe", color: "hsl(213,90%,50%)", href: `https://vk.com/share.php?url=${encodeURIComponent(url)}&title=${encodeURIComponent(shortText)}` },
-    { name: "Telegram", icon: "Send", color: "hsl(200,90%,45%)", href: `https://t.me/share/url?url=${encodeURIComponent(url)}&text=${encodeURIComponent(shortText)}` },
-    { name: "Twitter/X", icon: "Twitter", color: "hsl(210,90%,40%)", href: `https://twitter.com/intent/tweet?url=${encodeURIComponent(url)}&text=${encodeURIComponent(shortText)}` },
-    { name: "WhatsApp", icon: "MessageCircle", color: "hsl(142,70%,38%)", href: `https://wa.me/?text=${encodeURIComponent(shortText + " " + url)}` },
-    { name: "LinkedIn", icon: "Briefcase", color: "hsl(210,80%,40%)", href: `https://www.linkedin.com/sharing/share-offsite/?url=${encodeURIComponent(url)}` },
-  ];
-  const copyLink = () => { navigator.clipboard.writeText(url).catch(() => {}); alert("Ссылка скопирована!"); };
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: "rgba(0,0,0,0.6)" }} onClick={onClose}>
-      <div className="w-full max-w-sm rounded-xl p-5" style={{ background: "white", border: "1px solid hsl(216,20%,88%)" }} onClick={(e) => e.stopPropagation()}>
-        <div className="flex items-center justify-between mb-4">
-          <h3 className="font-semibold text-sm">Поделиться</h3>
-          <button onClick={onClose}><Icon name="X" size={16} style={{ color: "hsl(220,15%,55%)" }} /></button>
-        </div>
-        <div className="grid grid-cols-5 gap-3 mb-4">
-          {socials.map((s) => (
-            <a key={s.name} href={s.href} target="_blank" rel="noopener noreferrer" title={s.name}
-              className="flex flex-col items-center gap-1.5" onClick={() => { apiPost(POSTS_URL, { action: "share", post_id: postId }); }}>
-              <div className="w-11 h-11 rounded-full flex items-center justify-center" style={{ background: `${s.color}18`, border: `1.5px solid ${s.color}40` }}>
-                <Icon name={s.icon} size={20} style={{ color: s.color }} />
-              </div>
-              <span className="text-xs" style={{ color: "hsl(220,15%,55%)", fontSize: "9px" }}>{s.name}</span>
-            </a>
-          ))}
-        </div>
-        <div className="flex items-center gap-2 p-2.5 rounded-lg" style={{ background: "hsl(216,20%,96%)" }}>
-          <span className="flex-1 text-xs truncate" style={{ color: "hsl(220,15%,55%)" }}>{url}</span>
-          <button className="btn-primary text-xs px-3 py-1.5 flex-shrink-0" onClick={copyLink}>Скопировать</button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-// ─── UsersListModal ───────────────────────────────────────────────────────────
-function UsersListModal({ title, users, onClose, onFollowToggle }: {
-  title: string;
-  users: { id: number; full_name: string; job_title: string; avatar_url: string; initials: string; is_following?: boolean }[];
-  onClose: () => void;
-  onFollowToggle?: (uid: number, following: boolean) => void;
-}) {
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: "rgba(0,0,0,0.6)" }} onClick={onClose}>
-      <div className="w-full max-w-sm rounded-xl" style={{ background: "white", border: "1px solid hsl(216,20%,88%)", maxHeight: "70vh", display: "flex", flexDirection: "column" }} onClick={(e) => e.stopPropagation()}>
-        <div className="flex items-center justify-between px-4 py-3 border-b" style={{ borderColor: "hsl(216,20%,88%)" }}>
-          <h3 className="font-semibold text-sm">{title} · {users.length}</h3>
-          <button onClick={onClose}><Icon name="X" size={16} style={{ color: "hsl(220,15%,55%)" }} /></button>
-        </div>
-        <div className="overflow-y-auto flex-1">
-          {users.length === 0 && <div className="text-center py-10 text-sm" style={{ color: "hsl(220,15%,55%)" }}>Пока никого нет</div>}
-          {users.map((u) => (
-            <div key={u.id} className="flex items-center gap-3 px-4 py-3 border-b" style={{ borderColor: "hsl(216,20%,94%)" }}>
-              <Avatar initials={u.initials} avatarUrl={u.avatar_url} size="sm" />
-              <div className="flex-1 min-w-0">
-                <div className="font-medium text-sm truncate">{u.full_name}</div>
-                <div className="text-xs truncate" style={{ color: "hsl(220,15%,55%)" }}>{u.job_title || "Участник"}</div>
-              </div>
-              {onFollowToggle && (
-                <button className={u.is_following ? "btn-outline text-xs px-3 py-1" : "btn-primary text-xs px-3 py-1"}
-                  onClick={async () => {
-                    const action = u.is_following ? "unfollow" : "follow";
-                    const r = await apiPost(SOCIAL_URL, { action, user_id: u.id });
-                    if (r.ok) onFollowToggle(u.id, !u.is_following);
-                  }}>
-                  {u.is_following ? "Подписан" : "+"}
-                </button>
-              )}
-            </div>
-          ))}
-        </div>
-      </div>
-    </div>
-  );
-}
-
-// ─── UserProfilePage (просмотр профиля другого пользователя) ─────────────────
-interface PublicUser {
-  id: number; full_name: string; job_title: string; bio: string;
-  avatar_url: string; cover_url: string;
-  social_vk: string; social_tg: string; social_linkedin: string; social_instagram: string;
-  stats: { followers: number; following: number; posts: number; views: number; reach: number };
-  is_following: boolean; is_me: boolean;
-}
-
-function UserProfilePage({ userId, currentUser, onBack, onOpenChat }: {
-  userId: number;
-  currentUser: User | null;
-  onBack: () => void;
-  onOpenChat?: (uid: number) => void;
-}) {
-  const [profile, setProfile] = useState<PublicUser | null>(null);
-  const [posts, setPosts] = useState<Post[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [following, setFollowing] = useState(false);
-  const [followersCount, setFollowersCount] = useState(0);
-  const [mediaViewer, setMediaViewer] = useState<{ url: string; type: string } | null>(null);
-  const [followersModal, setFollowersModal] = useState<"followers" | "following" | null>(null);
-  const [followUsers, setFollowUsers] = useState<{ id: number; full_name: string; job_title: string; avatar_url: string; initials: string; is_following: boolean }[]>([]);
-
-  useEffect(() => {
-    setLoading(true);
-    Promise.all([
-      apiPost(SOCIAL_URL, { action: "get_profile_by_id", user_id: userId }),
-      apiPost(POSTS_URL, { action: "user_posts", user_id: userId }),
-    ]).then(([pr, postsR]) => {
-      if (pr.ok) {
-        const p = pr.data as unknown as PublicUser;
-        setProfile(p);
-        setFollowing(p.is_following);
-        setFollowersCount(p.stats.followers);
-      }
-      setPosts((postsR.data.posts as Post[]) || []);
-      setLoading(false);
-    });
-  }, [userId]);
-
-  const handleFollow = async () => {
-    if (!currentUser) return;
-    const action = following ? "unfollow" : "follow";
-    const r = await apiPost(SOCIAL_URL, { action, user_id: userId });
-    if (r.ok) {
-      setFollowing(!following);
-      setFollowersCount(r.data.followers_count as number ?? followersCount + (following ? -1 : 1));
-    }
-  };
-
-  const openFollowModal = async (type: "followers" | "following") => {
-    setFollowersModal(type);
-    setFollowUsers([]);
-    const action = type === "followers" ? "get_followers" : "get_following";
-    const r = await apiPost(POSTS_URL, { action, user_id: userId });
-    setFollowUsers((r.data.users as typeof followUsers) || []);
-  };
-
-  const [postView, setPostView] = useState<"grid" | "list">("grid");
-  const mediaOnly = posts.filter((p) => p.media_url);
-
-  if (loading) return <div className="max-w-3xl mx-auto px-4 py-10"><div className="h-48 rounded-xl shimmer" /></div>;
-  if (!profile) return <div className="text-center py-20 text-sm" style={{ color: "hsl(220,15%,55%)" }}>Профиль не найден</div>;
-
-  const socials = [
-    { key: "vk", label: "ВКонтакте", icon: "Globe", color: "hsl(213,90%,50%)", href: `https://vk.com/${profile.social_vk}`, value: profile.social_vk },
-    { key: "tg", label: "Telegram", icon: "Send", color: "hsl(200,90%,45%)", href: `https://t.me/${profile.social_tg}`, value: profile.social_tg },
-    { key: "li", label: "LinkedIn", icon: "Briefcase", color: "hsl(210,90%,40%)", href: `https://linkedin.com/in/${profile.social_linkedin}`, value: profile.social_linkedin },
-    { key: "ig", label: "Instagram", icon: "Camera", color: "hsl(320,80%,55%)", href: `https://instagram.com/${profile.social_instagram}`, value: profile.social_instagram },
-  ].filter((s) => s.value);
-
-  const displayInitials = profile.full_name.split(" ").map((w) => w[0]).filter(Boolean).join("").slice(0, 2).toUpperCase();
-
-  return (
-    <div className="max-w-3xl mx-auto px-4 py-5">
-      {mediaViewer && <MediaViewer url={mediaViewer.url} type={mediaViewer.type} onClose={() => setMediaViewer(null)} />}
-      {followersModal && (
-        <UsersListModal title={followersModal === "followers" ? "Подписчики" : "Подписки"} users={followUsers}
-          onClose={() => setFollowersModal(null)}
-          onFollowToggle={(uid, f) => setFollowUsers((prev) => prev.map((u) => u.id === uid ? { ...u, is_following: f } : u))} />
-      )}
-
-      <button className="flex items-center gap-2 text-sm mb-4" style={{ color: "hsl(213,80%,40%)" }} onClick={onBack}>
-        <Icon name="ArrowLeft" size={16} />Назад
-      </button>
-
-      <div className="post-card mb-4 overflow-hidden p-0">
-        {/* Cover */}
-        <div className="relative w-full" style={{ height: 160 }}>
-          {profile.cover_url
-            ? <img src={profile.cover_url} alt="cover" className="w-full h-full object-cover" />
-            : <div className="w-full h-full" style={{ background: "linear-gradient(135deg, hsl(221,55%,20%) 0%, hsl(213,80%,35%) 100%)" }} />}
-        </div>
-
-        <div className="px-5 pb-5">
-          {/* Avatar row */}
-          <div className="flex items-end justify-between -mt-10 mb-3">
-            <div className="flex-shrink-0">
-              {profile.avatar_url
-                ? <img src={profile.avatar_url} alt={displayInitials} className="w-20 h-20 rounded-full border-4 object-cover" style={{ borderColor: "white" }} />
-                : <div className="w-20 h-20 rounded-full border-4 flex items-center justify-center text-xl font-bold text-white" style={{ background: "hsl(213,80%,40%)", borderColor: "white" }}>{displayInitials}</div>}
-            </div>
-            {currentUser && !profile.is_me && (
-              <div className="flex gap-2 items-center pt-1">
-                <button className={following ? "btn-outline text-xs px-4 py-2" : "btn-primary text-xs px-4 py-2"} onClick={handleFollow}>
-                  {following ? "Подписан" : "+ Подписаться"}
-                </button>
-                {onOpenChat && (
-                  <button className="btn-outline text-xs px-3 py-2" onClick={() => onOpenChat(userId)} title="Написать сообщение">
-                    <Icon name="MessageSquare" size={14} />
-                  </button>
-                )}
-              </div>
-            )}
-          </div>
-
-          {/* Name & title */}
-          <h1 className="font-bold text-xl leading-tight">{profile.full_name}</h1>
-          <p className="text-sm mt-0.5 mb-2" style={{ color: "hsl(220,15%,50%)" }}>{profile.job_title}</p>
-          {profile.bio && <p className="text-sm mb-3 leading-relaxed" style={{ color: "hsl(220,25%,30%)" }}>{profile.bio}</p>}
-
-          {socials.length > 0 && (
-            <div className="flex flex-wrap gap-2 mb-3">
-              {socials.map((s) => (
-                <a key={s.key} href={s.href} target="_blank" rel="noopener noreferrer"
-                  className="flex items-center gap-1 text-xs px-2.5 py-1 rounded-full"
-                  style={{ background: `${s.color}15`, color: s.color, border: `1px solid ${s.color}30` }}>
-                  <Icon name={s.icon} size={11} />{s.label}
-                </a>
-              ))}
-            </div>
-          )}
-
-          {/* Stats */}
-          <div className="grid grid-cols-4 gap-3 pt-3 border-t" style={{ borderColor: "hsl(216,20%,90%)" }}>
-            {[
-              { label: "Подписчиков", value: followersCount, click: () => openFollowModal("followers") },
-              { label: "Подписок", value: profile.stats.following, click: () => openFollowModal("following") },
-              { label: "Постов", value: profile.stats.posts, click: undefined },
-              { label: "Просмотров", value: profile.stats.views, click: undefined },
-            ].map((s, i) => (
-              <button key={s.label} className="text-center py-1 rounded-lg hover:bg-gray-50 transition-colors" onClick={s.click}>
-                <div className="font-bold text-lg" style={{ color: "hsl(221,65%,22%)" }}>{s.value.toLocaleString("ru")}</div>
-                <div className="text-xs" style={{ color: i < 2 ? "hsl(213,80%,40%)" : "hsl(220,15%,55%)" }}>{s.label}</div>
-              </button>
-            ))}
-          </div>
-        </div>
-      </div>
-
-      {/* Posts */}
-      <div className="flex items-center justify-between mb-3">
-        <h2 className="font-semibold text-xs uppercase tracking-wider" style={{ color: "hsl(220,15%,50%)" }}>Публикации</h2>
-        <div className="flex gap-1">
-          <button onClick={() => setPostView("grid")} className={`p-1.5 rounded ${postView === "grid" ? "btn-primary" : "btn-outline"}`}><Icon name="Grid3X3" size={13} /></button>
-          <button onClick={() => setPostView("list")} className={`p-1.5 rounded ${postView === "list" ? "btn-primary" : "btn-outline"}`}><Icon name="List" size={13} /></button>
-        </div>
-      </div>
-
-      {postView === "grid" && (
-        <div>
-          {mediaOnly.length > 0 && (
-            <div className="grid grid-cols-3 gap-1 mb-4">
-              {mediaOnly.map((p) => (
-                <div key={p.id} className="relative aspect-square rounded-lg overflow-hidden bg-gray-100 cursor-pointer"
-                  onClick={() => setMediaViewer({ url: p.media_url!, type: p.media_type || "image" })}>
-                  {p.media_type === "image"
-                    ? <img src={p.media_url} alt="" className="w-full h-full object-cover" />
-                    : <div className="w-full h-full flex items-center justify-center" style={{ background: "hsl(221,25%,18%)" }}><Icon name="Play" size={24} style={{ color: "white" }} /></div>}
-                  <div className="absolute bottom-0 left-0 right-0 flex gap-2 px-2 py-1" style={{ background: "rgba(0,0,0,0.4)", color: "white", fontSize: "10px" }}>
-                    <span className="flex items-center gap-1"><Icon name="Heart" size={10} />{p.likes_count}</span>
-                    <span className="flex items-center gap-1"><Icon name="Eye" size={10} />{p.views_count}</span>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-          <div className="space-y-2">
-            {posts.filter((p) => !p.media_url).map((p) => (
-              <div key={p.id} className="post-card py-3 px-4">
-                <p className="text-sm" style={{ color: "hsl(220,25%,20%)" }}>{p.text}</p>
-                <div className="flex gap-3 mt-2 text-xs" style={{ color: "hsl(220,15%,60%)" }}>
-                  <span>{timeAgo(p.created_at)}</span>
-                  <span className="flex items-center gap-1"><Icon name="Heart" size={11} />{p.likes_count}</span>
-                  <span className="flex items-center gap-1"><Icon name="Eye" size={11} />{p.views_count}</span>
-                </div>
-              </div>
-            ))}
-          </div>
-          {posts.length === 0 && <div className="text-center py-10 text-sm" style={{ color: "hsl(220,15%,55%)" }}>Публикаций пока нет</div>}
-        </div>
-      )}
-
-      {postView === "list" && (
-        <div className="space-y-4">
-          {posts.map((p) => (
-            <PostCard key={p.id} post={p}
-              onLike={async (id) => { const r = await apiPost(POSTS_URL, { action: "like", post_id: id }); if (r.ok) setPosts((prev) => prev.map((pp) => pp.id === id ? { ...pp, liked: r.data.liked as boolean, likes_count: r.data.likes_count as number } : pp)); }}
-              onCommentAdded={(id) => setPosts((prev) => prev.map((pp) => pp.id === id ? { ...pp, comments_count: pp.comments_count + 1 } : pp))}
-              userInitials={currentUser ? getInitials(currentUser.full_name) : "?"}
-              userAvatarUrl={currentUser?.avatar_url}
-            />
-          ))}
-          {posts.length === 0 && <div className="text-center py-10 text-sm" style={{ color: "hsl(220,15%,55%)" }}>Публикаций пока нет</div>}
-        </div>
-      )}
-    </div>
-  );
-}
-
-// ─── Groups Page ──────────────────────────────────────────────────────────────
-interface Group { id: number; name: string; description: string; avatar_url: string; members_count: number; owner_id: number; is_member: boolean; initials: string; }
-interface GroupPost { id: number; text: string; media_url: string; media_type: string; likes_count: number; created_at: string; author: PostAuthor; }
-
-function GroupDetailPage({ group, currentUser, onBack }: { group: Group; currentUser: User | null; onBack: () => void }) {
-  const [posts, setPosts] = useState<GroupPost[]>([]);
-  const [members, setMembers] = useState<{ id: number; full_name: string; job_title: string; avatar_url: string; initials: string; role: string }[]>([]);
-  const [tab, setTab] = useState<"posts" | "members">("posts");
-  const [isMember, setIsMember] = useState(group.is_member);
-  const [membersCount, setMembersCount] = useState(group.members_count);
-  const [newPostText, setNewPostText] = useState("");
-  const [showCreate, setShowCreate] = useState(false);
-  const [mediaFile, setMediaFile] = useState<File | null>(null);
-  const [mediaPreview, setMediaPreview] = useState("");
-  const [posting, setPosting] = useState(false);
-  const [mediaViewer, setMediaViewer] = useState<{ url: string; type: string } | null>(null);
-  const fileRef = { current: null as HTMLInputElement | null };
-
-  useEffect(() => {
-    apiPost(SOCIAL_URL, { action: "group_posts", group_id: group.id }).then((r) => setPosts((r.data.posts as GroupPost[]) || []));
-    apiPost(SOCIAL_URL, { action: "group_members", group_id: group.id }).then((r) => setMembers((r.data.members as typeof members) || []));
-  }, [group.id]);
-
-  const handleJoin = async () => {
-    const action = isMember ? "group_leave" : "group_join";
-    const r = await apiPost(SOCIAL_URL, { action, group_id: group.id });
-    if (r.ok) { setIsMember(!isMember); setMembersCount(r.data.members_count as number); }
-  };
-
-  const handlePost = async () => {
-    if (!newPostText.trim() && !mediaFile) return;
-    setPosting(true);
-    let media_url = "", media_type = "";
-    if (mediaFile) {
-      const b64 = await readFileAsBase64(mediaFile);
-      const r2 = await apiPost(SOCIAL_URL, { action: "upload_media", file_data: b64, file_type: mediaFile.type });
-      if (r2.ok) { media_url = r2.data.url as string; media_type = r2.data.media_type as string; }
-    }
-    const r = await apiPost(SOCIAL_URL, { action: "group_post_create", group_id: group.id, text: newPostText.trim(), media_url, media_type });
-    setPosting(false);
-    if (r.ok) { setPosts((prev) => [r.data.post as GroupPost, ...prev]); setNewPostText(""); setMediaFile(null); setMediaPreview(""); setShowCreate(false); }
-  };
-
-  return (
-    <div className="max-w-2xl mx-auto px-4 py-4">
-      {mediaViewer && <MediaViewer url={mediaViewer.url} type={mediaViewer.type} onClose={() => setMediaViewer(null)} />}
-      <input ref={(el) => { fileRef.current = el; }} type="file" accept="image/*,video/*" className="hidden" onChange={async (e) => { const f = e.target.files?.[0]; if (!f) return; setMediaFile(f); setMediaPreview(await readFileAsBase64(f)); }} />
-
-      <button className="flex items-center gap-2 text-sm mb-4" style={{ color: "hsl(213,80%,40%)" }} onClick={onBack}>
-        <Icon name="ArrowLeft" size={16} />Назад
-      </button>
-
-      {/* Group header */}
-      <div className="post-card mb-4">
-        <div className="h-20 rounded-lg -mx-5 -mt-5 mb-4" style={{ background: "linear-gradient(135deg, hsl(213,80%,25%) 0%, hsl(270,60%,35%) 100%)" }} />
-        <div className="flex items-end gap-4 -mt-8 mb-3">
-          <div className="w-14 h-14 rounded-xl border-4 border-card flex items-center justify-center text-white font-bold text-lg flex-shrink-0" style={{ background: getAvatarColor(group.initials) }}>
-            {group.initials}
-          </div>
-          <div className="flex-1 pb-1">
-            <h2 className="font-bold text-base">{group.name}</h2>
-            <div className="text-xs" style={{ color: "hsl(220,15%,55%)" }}>{membersCount} участников</div>
-          </div>
-          {currentUser && (
-            <button className={isMember ? "btn-outline text-xs px-4 py-2" : "btn-primary text-xs px-4 py-2"} onClick={handleJoin}>
-              {isMember ? "Выйти" : "Вступить"}
-            </button>
-          )}
-        </div>
-        {group.description && <p className="text-sm" style={{ color: "hsl(220,25%,30%)" }}>{group.description}</p>}
-      </div>
-
-      {/* Tabs */}
-      <div className="flex gap-2 mb-4">
-        {(["posts", "members"] as const).map((t) => (
-          <button key={t} onClick={() => setTab(t)} className={tab === t ? "btn-primary text-xs px-4 py-2" : "btn-outline text-xs px-4 py-2"}>
-            {{ posts: "Публикации", members: "Участники" }[t]}
-          </button>
-        ))}
-      </div>
-
-      {tab === "posts" && (
-        <>
-          {isMember && (
-            <div className="post-card mb-4">
-              {!showCreate ? (
-                <button className="w-full text-left px-4 py-2.5 rounded-full border text-sm" style={{ borderColor: "hsl(216,20%,85%)", color: "hsl(220,15%,55%)" }} onClick={() => setShowCreate(true)}>
-                  Написать в группе...
-                </button>
-              ) : (
-                <div>
-                  <textarea className="w-full px-3 py-2 rounded-lg border text-sm outline-none resize-none" style={{ borderColor: "hsl(216,20%,85%)", minHeight: 80 }}
-                    placeholder="Текст публикации..." value={newPostText} onChange={(e) => setNewPostText(e.target.value)} />
-                  {mediaPreview && (
-                    <div className="relative mt-2">
-                      {mediaFile?.type.startsWith("video/") ? <video src={mediaPreview} className="w-full max-h-40 rounded-lg" controls /> : <img src={mediaPreview} className="w-full max-h-40 object-cover rounded-lg" />}
-                      <button className="absolute top-1 right-1 w-6 h-6 rounded-full flex items-center justify-center" style={{ background: "rgba(0,0,0,0.6)", color: "white" }} onClick={() => { setMediaFile(null); setMediaPreview(""); }}>
-                        <Icon name="X" size={12} />
-                      </button>
-                    </div>
-                  )}
-                  <div className="flex justify-between mt-2">
-                    <button className="btn-outline text-xs px-3 py-1.5 flex items-center gap-1.5" onClick={() => fileRef.current?.click()}>
-                      <Icon name="Image" size={12} />Фото/Видео
-                    </button>
-                    <div className="flex gap-2">
-                      <button className="btn-outline text-xs px-3 py-1.5" onClick={() => { setShowCreate(false); setNewPostText(""); setMediaFile(null); setMediaPreview(""); }}>Отмена</button>
-                      <button className="btn-primary text-xs px-3 py-1.5" onClick={handlePost} disabled={posting}>
-                        {posting ? "Публикация..." : "Опубликовать"}
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              )}
-            </div>
-          )}
-          <div className="space-y-4">
-            {posts.map((p) => (
-              <div key={p.id} className="post-card">
-                <div className="flex items-center gap-3 mb-3">
-                  <Avatar initials={p.author.initials} avatarUrl={p.author.avatar_url} size="sm" />
-                  <div>
-                    <div className="font-medium text-sm">{p.author.full_name}</div>
-                    <div className="text-xs" style={{ color: "hsl(220,15%,60%)" }}>{timeAgo(p.created_at)}</div>
-                  </div>
-                </div>
-                {p.text && <p className="text-sm mb-2" style={{ color: "hsl(220,25%,20%)" }}>{p.text}</p>}
-                {p.media_url && p.media_type === "image" && (
-                  <img src={p.media_url} className="w-full rounded-lg max-h-80 object-cover cursor-pointer" onClick={() => setMediaViewer({ url: p.media_url, type: "image" })} />
-                )}
-                {p.media_url && p.media_type === "video" && (
-                  <video src={p.media_url} controls className="w-full rounded-lg max-h-80 cursor-pointer" onClick={(e) => { e.preventDefault(); setMediaViewer({ url: p.media_url, type: "video" }); }} />
-                )}
-              </div>
-            ))}
-            {posts.length === 0 && <div className="text-center py-10 text-sm" style={{ color: "hsl(220,15%,55%)" }}>Публикаций пока нет</div>}
-          </div>
-        </>
-      )}
-
-      {tab === "members" && (
-        <div className="space-y-2">
-          {members.map((m) => (
-            <div key={m.id} className="post-card flex items-center gap-3">
-              <Avatar initials={m.initials} avatarUrl={m.avatar_url} size="sm" />
-              <div className="flex-1">
-                <div className="font-medium text-sm">{m.full_name}</div>
-                <div className="text-xs" style={{ color: "hsl(220,15%,55%)" }}>{m.job_title || m.role}</div>
-              </div>
-              {m.role === "owner" && <span className="text-xs px-2 py-0.5 rounded-full" style={{ background: "hsl(213,80%,94%)", color: "hsl(213,80%,40%)" }}>Владелец</span>}
-            </div>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
-
-function GroupsPage({ currentUser }: { currentUser: User | null }) {
-  const [groups, setGroups] = useState<Group[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [query, setQuery] = useState("");
-  const [activeGroup, setActiveGroup] = useState<Group | null>(null);
-  const [showCreate, setShowCreate] = useState(false);
-  const [newGroupName, setNewGroupName] = useState("");
-  const [newGroupDesc, setNewGroupDesc] = useState("");
-  const [creating, setCreating] = useState(false);
-
-  useEffect(() => {
-    apiPost(SOCIAL_URL, { action: "groups_list" }).then((r) => {
-      setGroups((r.data.groups as Group[]) || []);
-      setLoading(false);
-    });
-  }, []);
-
-  const handleSearch = async (q: string) => {
-    setQuery(q);
-    const r = await apiPost(SOCIAL_URL, { action: "groups_list", q });
-    setGroups((r.data.groups as Group[]) || []);
-  };
-
-  const handleCreate = async () => {
-    if (!newGroupName.trim()) return;
-    setCreating(true);
-    const r = await apiPost(SOCIAL_URL, { action: "group_create", name: newGroupName.trim(), description: newGroupDesc.trim() });
-    setCreating(false);
-    if (r.ok && r.data.group) { setGroups((prev) => [r.data.group as Group, ...prev]); setShowCreate(false); setNewGroupName(""); setNewGroupDesc(""); }
-  };
-
-  if (activeGroup) return <GroupDetailPage group={activeGroup} currentUser={currentUser} onBack={() => setActiveGroup(null)} />;
-
-  return (
-    <div className="max-w-2xl mx-auto px-4 py-5">
-      {showCreate && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: "rgba(0,0,0,0.6)" }} onClick={() => setShowCreate(false)}>
-          <div className="w-full max-w-md rounded-xl p-5" style={{ background: "white" }} onClick={(e) => e.stopPropagation()}>
-            <h3 className="font-semibold text-base mb-4">Создать группу</h3>
-            <input className="w-full px-3 py-2.5 rounded-lg border text-sm mb-3 outline-none" style={{ borderColor: "hsl(216,20%,85%)" }} placeholder="Название группы *" value={newGroupName} onChange={(e) => setNewGroupName(e.target.value)} />
-            <textarea className="w-full px-3 py-2.5 rounded-lg border text-sm mb-4 outline-none resize-none" style={{ borderColor: "hsl(216,20%,85%)", minHeight: 80 }} placeholder="Описание (необязательно)" value={newGroupDesc} onChange={(e) => setNewGroupDesc(e.target.value)} />
-            <div className="flex gap-2">
-              <button className="btn-outline flex-1 py-2" onClick={() => setShowCreate(false)}>Отмена</button>
-              <button className="btn-primary flex-1 py-2" onClick={handleCreate} disabled={creating || !newGroupName.trim()}>
-                {creating ? "Создание..." : "Создать"}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      <div className="flex items-center gap-3 mb-4">
-        <div className="relative flex-1">
-          <Icon name="Search" size={14} className="absolute left-3 top-1/2 -translate-y-1/2" style={{ color: "hsl(220,15%,60%)" }} />
-          <input className="w-full pl-8 pr-3 py-2 rounded-lg border text-sm outline-none" style={{ borderColor: "hsl(216,20%,85%)" }} placeholder="Поиск групп..." value={query} onChange={(e) => handleSearch(e.target.value)} />
-        </div>
-        {currentUser && <button className="btn-primary text-xs px-4 py-2 flex items-center gap-1.5" onClick={() => setShowCreate(true)}><Icon name="Plus" size={13} />Создать</button>}
-      </div>
-
-      {loading && [1,2,3].map((i) => <div key={i} className="h-20 rounded-lg shimmer mb-2" />)}
-      {!loading && groups.length === 0 && (
-        <div className="text-center py-12" style={{ color: "hsl(220,15%,55%)" }}>
-          <Icon name="Users" size={36} className="mx-auto mb-3 opacity-30" />
-          <div className="text-sm font-medium">Групп пока нет</div>
-          {currentUser && <button className="btn-primary text-xs px-4 py-2 mt-3" onClick={() => setShowCreate(true)}>Создать первую группу</button>}
-        </div>
-      )}
-      <div className="space-y-3">
-        {groups.map((g) => (
-          <div key={g.id} className="post-card flex items-center gap-4 cursor-pointer hover:shadow-md transition-shadow" onClick={() => setActiveGroup(g)}>
-            <div className="w-12 h-12 rounded-xl flex items-center justify-center text-white font-bold text-base flex-shrink-0" style={{ background: getAvatarColor(g.initials) }}>
-              {g.initials}
-            </div>
-            <div className="flex-1 min-w-0">
-              <div className="font-semibold text-sm">{g.name}</div>
-              <div className="text-xs truncate" style={{ color: "hsl(220,15%,55%)" }}>{g.members_count} участников · {g.description || "Группа NEXUS"}</div>
-            </div>
-            <div className="flex-shrink-0">
-              {g.is_member ? (
-                <span className="text-xs px-2.5 py-1 rounded-full" style={{ background: "hsl(142,60%,93%)", color: "hsl(142,70%,35%)" }}>Участник</span>
-              ) : (
-                <span className="text-xs px-2.5 py-1 rounded-full" style={{ background: "hsl(216,20%,94%)", color: "hsl(220,15%,45%)" }}>Вступить</span>
-              )}
-            </div>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-function PostCard({ post, onLike, onCommentAdded, onDelete, userInitials, userAvatarUrl, onOpenProfile }: {
+function PostCard({ post, onLike, onCommentAdded, userInitials }: {
   post: Post;
   onLike: (id: number) => void;
   onCommentAdded: (id: number) => void;
-  onDelete?: (id: number) => void;
   userInitials: string;
-  userAvatarUrl?: string;
-  onOpenProfile?: (uid: number) => void;
 }) {
   const [showComments, setShowComments] = useState(false);
   const [comments, setComments] = useState<Comment[]>([]);
   const [loadingComments, setLoadingComments] = useState(false);
   const [commentText, setCommentText] = useState("");
   const [submitting, setSubmitting] = useState(false);
-  const [shareCount, setShareCount] = useState(post.share_count || 0);
-  const [sharing, setSharing] = useState(false);
-  const [deleting, setDeleting] = useState(false);
-  const [menuOpen, setMenuOpen] = useState(false);
-  const [mediaViewer, setMediaViewer] = useState<{ url: string; type: string } | null>(null);
-  const [showShare, setShowShare] = useState(false);
-  const [likesUsers, setLikesUsers] = useState<{ id: number; full_name: string; job_title: string; avatar_url: string; initials: string }[]>([]);
-  const [showLikes, setShowLikes] = useState(false);
-  const [loadingLikes, setLoadingLikes] = useState(false);
 
   const toggleComments = async () => {
     if (!showComments && comments.length === 0) {
@@ -1102,106 +428,44 @@ function PostCard({ post, onLike, onCommentAdded, onDelete, userInitials, userAv
     }
   };
 
-  const handleShare = () => setShowShare(true);
-
-  const handleShowLikes = async () => {
-    if (post.likes_count === 0) return;
-    setLoadingLikes(true);
-    setShowLikes(true);
-    const r = await apiPost(POSTS_URL, { action: "get_likes_users", post_id: post.id });
-    setLikesUsers((r.data.users as typeof likesUsers) || []);
-    setLoadingLikes(false);
-  };
-
-  const handleDelete = async () => {
-    if (!confirm("Удалить этот пост?")) return;
-    setDeleting(true);
-    const r = await apiPost(POSTS_URL, { action: "delete", post_id: post.id });
-    setDeleting(false);
-    if (r.ok) onDelete?.(post.id);
-  };
-
   return (
     <div className="post-card">
-      {mediaViewer && <MediaViewer url={mediaViewer.url} type={mediaViewer.type} onClose={() => setMediaViewer(null)} />}
-      {showShare && <ShareModal postId={post.id} text={post.text} onClose={() => { setShowShare(false); setShareCount(c => c + 1); }} />}
-      {showLikes && (
-        <UsersListModal title="Лайки" users={loadingLikes ? [] : likesUsers} onClose={() => setShowLikes(false)} />
-      )}
-
       <div className="flex items-start gap-3">
-        <div className="cursor-pointer" onClick={() => onOpenProfile?.(post.author.id)}>
-          <Avatar initials={post.author.initials} avatarUrl={post.author.avatar_url} />
-        </div>
+        <Avatar initials={post.author.initials} />
         <div className="flex-1 min-w-0">
-          <button className="font-semibold text-sm hover:underline text-left" onClick={() => onOpenProfile?.(post.author.id)}>{post.author.full_name}</button>
+          <div className="font-semibold text-sm">{post.author.full_name}</div>
           <div className="text-xs mt-0.5" style={{ color: "hsl(220,15%,55%)" }}>{post.author.job_title}</div>
           <div className="text-xs mt-0.5" style={{ color: "hsl(220,15%,65%)" }}>{timeAgo(post.created_at)}</div>
         </div>
-        {post.is_mine && (
-          <div className="relative">
-            <button className="w-7 h-7 flex items-center justify-center rounded-md hover:bg-muted" style={{ color: "hsl(220,15%,55%)" }} onClick={() => setMenuOpen(v => !v)}>
-              <Icon name="MoreHorizontal" size={15} />
-            </button>
-            {menuOpen && (
-              <div className="absolute right-0 top-8 z-20 rounded-lg shadow-lg py-1 min-w-[130px]" style={{ background: "white", border: "1px solid hsl(216,20%,88%)" }}>
-                <button className="w-full text-left px-4 py-2 text-xs flex items-center gap-2 hover:bg-red-50" style={{ color: "hsl(0,72%,48%)" }}
-                  onClick={() => { setMenuOpen(false); handleDelete(); }} disabled={deleting}>
-                  <Icon name="Trash2" size={13} />{deleting ? "Удаление..." : "Удалить пост"}
-                </button>
-              </div>
-            )}
-          </div>
-        )}
       </div>
-
-      {post.text && <p className="mt-3 text-sm leading-relaxed whitespace-pre-wrap" style={{ color: "hsl(220,25%,20%)" }}>{post.text}</p>}
-      {post.media_url && post.media_type === "image" && (
-        <div className="mt-3 relative cursor-pointer" onClick={() => setMediaViewer({ url: post.media_url!, type: "image" })}>
-          <img src={post.media_url} alt="media" className="w-full rounded-xl object-cover" style={{ maxHeight: "480px" }} />
-          <div className="absolute inset-0 rounded-xl flex items-center justify-center opacity-0 hover:opacity-100 transition-opacity" style={{ background: "rgba(0,0,0,0.15)" }}>
-            <div className="w-10 h-10 rounded-full flex items-center justify-center" style={{ background: "rgba(0,0,0,0.5)", color: "white" }}>
-              <Icon name="Maximize2" size={18} />
-            </div>
-          </div>
-        </div>
-      )}
-      {post.media_url && post.media_type === "video" && (
-        <div className="mt-3 relative">
-          <video src={post.media_url} controls className="w-full rounded-xl" style={{ maxHeight: "480px" }} />
-          <button className="absolute top-2 right-2 w-8 h-8 rounded-full flex items-center justify-center" style={{ background: "rgba(0,0,0,0.5)", color: "white" }}
-            onClick={() => setMediaViewer({ url: post.media_url!, type: "video" })}>
-            <Icon name="Maximize2" size={14} />
-          </button>
-        </div>
-      )}
+      <p className="mt-3 text-sm leading-relaxed whitespace-pre-wrap" style={{ color: "hsl(220,25%,20%)" }}>{post.text}</p>
       {post.tags.length > 0 && (
         <div className="flex flex-wrap gap-1.5 mt-3">
           {post.tags.map((tag) => <span key={tag} className="stat-badge">#{tag}</span>)}
         </div>
       )}
       <div className="flex items-center justify-between mt-4 pt-3 border-t text-xs" style={{ borderColor: "hsl(216,20%,90%)", color: "hsl(220,15%,55%)" }}>
-        <span className="flex items-center gap-1"><Icon name="Eye" size={13} />{post.views_count.toLocaleString("ru")}</span>
-        <div className="flex items-center gap-3">
+        <span className="flex items-center gap-1"><Icon name="Eye" size={13} />{post.views_count.toLocaleString("ru")} просмотров</span>
+        <div className="flex items-center gap-4">
           <button className="flex items-center gap-1.5 transition-colors" onClick={() => onLike(post.id)} style={{ color: post.liked ? "hsl(0,72%,51%)" : "hsl(220,15%,55%)" }}>
-            <Icon name="Heart" size={14} />
-            <span className={post.likes_count > 0 ? "cursor-pointer hover:underline" : ""} onClick={(e) => { e.stopPropagation(); handleShowLikes(); }}>{post.likes_count}</span>
+            <Icon name="Heart" size={14} />{post.likes_count}
           </button>
           <button className="flex items-center gap-1.5 transition-colors hover:text-blue-600" onClick={toggleComments} style={{ color: showComments ? "hsl(213,80%,40%)" : "hsl(220,15%,55%)" }}>
             <Icon name="MessageCircle" size={14} />{post.comments_count}
           </button>
-          <button className="flex items-center gap-1.5 hover:text-blue-600 transition-colors" onClick={handleShare}>
-            <Icon name="Share2" size={14} />{shareCount > 0 ? shareCount : ""}
+          <button className="flex items-center gap-1.5 hover:text-blue-600 transition-colors">
+            <Icon name="Share2" size={14} />Поделиться
           </button>
         </div>
       </div>
 
+      {/* Comments section */}
       {showComments && (
         <div className="mt-3 pt-3 border-t space-y-3" style={{ borderColor: "hsl(216,20%,92%)" }}>
           {loadingComments && <div className="h-8 rounded shimmer" />}
           {comments.map((c) => (
             <div key={c.id} className="flex items-start gap-2">
-              <Avatar initials={(c.author as PostAuthor & { avatar_url?: string }).avatar_url ? "" : c.author.initials} avatarUrl={(c.author as PostAuthor & { avatar_url?: string }).avatar_url} size="sm" />
+              <Avatar initials={c.author.initials} size="sm" />
               <div className="flex-1 px-3 py-2 rounded-lg" style={{ background: "hsl(216,20%,96%)" }}>
                 <div className="flex items-baseline gap-2">
                   <span className="font-medium text-xs">{c.author.full_name}</span>
@@ -1215,7 +479,7 @@ function PostCard({ post, onLike, onCommentAdded, onDelete, userInitials, userAv
             <p className="text-xs text-center py-2" style={{ color: "hsl(220,15%,62%)" }}>Будьте первым — оставьте комментарий</p>
           )}
           <div className="flex items-center gap-2">
-            <Avatar initials={userInitials} avatarUrl={userAvatarUrl} size="sm" />
+            <Avatar initials={userInitials} size="sm" />
             <input
               className="flex-1 px-3 py-1.5 rounded-full border text-sm outline-none focus:border-blue-400 transition-all"
               style={{ borderColor: "hsl(216,20%,85%)", color: "hsl(220,30%,15%)" }}
@@ -1234,7 +498,7 @@ function PostCard({ post, onLike, onCommentAdded, onDelete, userInitials, userAv
   );
 }
 
-function FeedPage({ currentUser, onOpenProfile }: { currentUser: User | null; onOpenProfile?: (uid: number) => void }) {
+function FeedPage({ currentUser }: { currentUser: User | null }) {
   const [feedPosts, setFeedPosts] = useState<Post[]>([]);
   const [loading, setLoading] = useState(true);
   const [showCreate, setShowCreate] = useState(false);
@@ -1249,16 +513,16 @@ function FeedPage({ currentUser, onOpenProfile }: { currentUser: User | null; on
 
   const handleLike = async (postId: number) => {
     const r = await apiPost(POSTS_URL, { action: "like", post_id: postId });
-    if (r.ok) setFeedPosts((prev) => prev.map((p) => p.id === postId
-      ? { ...p, liked: r.data.liked as boolean, likes_count: r.data.likes_count as number } : p));
+    if (r.ok) {
+      setFeedPosts((prev) => prev.map((p) => p.id === postId
+        ? { ...p, liked: r.data.liked as boolean, likes_count: r.data.likes_count as number }
+        : p
+      ));
+    }
   };
 
   const handleCommentAdded = (postId: number) => {
     setFeedPosts((prev) => prev.map((p) => p.id === postId ? { ...p, comments_count: p.comments_count + 1 } : p));
-  };
-
-  const handleDelete = (postId: number) => {
-    setFeedPosts((prev) => prev.filter((p) => p.id !== postId));
   };
 
   return (
@@ -1269,7 +533,7 @@ function FeedPage({ currentUser, onOpenProfile }: { currentUser: User | null; on
 
       <div className="post-card">
         <div className="flex items-center gap-3">
-          <Avatar initials={userInitials} avatarUrl={currentUser?.avatar_url} />
+          <Avatar initials={userInitials} />
           <button className="flex-1 text-left px-4 py-2.5 rounded-full border text-sm transition-colors hover:border-blue-400" style={{ borderColor: "hsl(216,20%,85%)", color: "hsl(220,15%,55%)" }} onClick={() => setShowCreate(true)}>
             Поделитесь профессиональными новостями...
           </button>
@@ -1277,9 +541,6 @@ function FeedPage({ currentUser, onOpenProfile }: { currentUser: User | null; on
         <div className="flex items-center gap-1.5 mt-3 pt-3 border-t" style={{ borderColor: "hsl(216,20%,90%)" }}>
           <button className="btn-outline text-xs px-3 py-1.5 flex items-center gap-1.5" onClick={() => setShowCreate(true)}>
             <Icon name="FileText" size={13} />Написать пост
-          </button>
-          <button className="btn-outline text-xs px-3 py-1.5 flex items-center gap-1.5" onClick={() => setShowCreate(true)}>
-            <Icon name="Image" size={13} />Фото/Видео
           </button>
         </div>
       </div>
@@ -1308,15 +569,13 @@ function FeedPage({ currentUser, onOpenProfile }: { currentUser: User | null; on
       )}
 
       {feedPosts.map((post) => (
-        <PostCard key={post.id} post={post} onLike={handleLike} onCommentAdded={handleCommentAdded}
-          onDelete={handleDelete} userInitials={userInitials} userAvatarUrl={currentUser?.avatar_url}
-          onOpenProfile={onOpenProfile} />
+        <PostCard key={post.id} post={post} onLike={handleLike} onCommentAdded={handleCommentAdded} userInitials={userInitials} />
       ))}
     </div>
   );
 }
 
-function FriendsPage({ onOpenProfile }: { onOpenProfile?: (uid: number) => void }) {
+function FriendsPage() {
   const [users, setUsers] = useState<SocialUser[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -1348,9 +607,9 @@ function FriendsPage({ onOpenProfile }: { onOpenProfile?: (uid: number) => void 
           <div className="grid grid-cols-2 gap-3">
             {following.map((u) => (
               <div key={u.id} className="post-card flex items-center gap-3">
-                <div className="cursor-pointer" onClick={() => onOpenProfile?.(u.id)}><Avatar initials={u.initials} /></div>
+                <Avatar initials={u.initials} />
                 <div className="flex-1 min-w-0">
-                  <button className="font-medium text-sm truncate hover:underline text-left w-full" onClick={() => onOpenProfile?.(u.id)}>{u.full_name}</button>
+                  <div className="font-medium text-sm truncate">{u.full_name}</div>
                   <div className="text-xs truncate" style={{ color: "hsl(220,15%,55%)" }}>{u.job_title || "Участник"}</div>
                 </div>
                 <button className="btn-outline text-xs p-2" onClick={() => toggleFollow(u)} title="Отписаться">
@@ -1370,9 +629,9 @@ function FriendsPage({ onOpenProfile }: { onOpenProfile?: (uid: number) => void 
           <div className="space-y-2">
             {suggestions.map((u) => (
               <div key={u.id} className="post-card flex items-center gap-4">
-                <div className="cursor-pointer" onClick={() => onOpenProfile?.(u.id)}><Avatar initials={u.initials} /></div>
+                <Avatar initials={u.initials} />
                 <div className="flex-1 min-w-0">
-                  <button className="font-medium text-sm hover:underline text-left" onClick={() => onOpenProfile?.(u.id)}>{u.full_name}</button>
+                  <div className="font-medium text-sm">{u.full_name}</div>
                   <div className="text-xs" style={{ color: "hsl(220,15%,55%)" }}>{u.job_title || "Участник сети"}</div>
                 </div>
                 <button className="btn-primary text-xs px-4 py-1.5" onClick={() => toggleFollow(u)}>
@@ -1395,7 +654,7 @@ function FriendsPage({ onOpenProfile }: { onOpenProfile?: (uid: number) => void 
   );
 }
 
-function NotificationsPage({ onOpenProfile }: { onOpenProfile?: (uid: number) => void }) {
+function NotificationsPage() {
   const [notifs, setNotifs] = useState<Notification[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -1443,7 +702,7 @@ function NotificationsPage({ onOpenProfile }: { onOpenProfile?: (uid: number) =>
   );
 }
 
-function SearchPage({ onStartChat, onOpenProfile }: { onStartChat?: (userId: number) => void; onOpenProfile?: (uid: number) => void }) {
+function SearchPage() {
   const [query, setQuery] = useState("");
   const [users, setUsers] = useState<SocialUser[]>([]);
   const [loading, setLoading] = useState(true);
@@ -1497,19 +756,17 @@ function SearchPage({ onStartChat, onOpenProfile }: { onStartChat?: (userId: num
           {loading && [1, 2, 3].map((i) => <div key={i} className="h-16 rounded-lg shimmer" />)}
           {!loading && users.map((u) => (
             <div key={u.id} className="post-card flex items-center gap-3">
-              <div className="cursor-pointer" onClick={() => onOpenProfile?.(u.id)}><Avatar initials={u.initials} /></div>
+              <Avatar initials={u.initials} />
               <div className="flex-1">
-                <button className="font-medium text-sm hover:underline text-left" onClick={() => onOpenProfile?.(u.id)}>{u.full_name}</button>
+                <div className="font-medium text-sm">{u.full_name}</div>
                 <div className="text-xs" style={{ color: "hsl(220,15%,55%)" }}>{u.job_title || "Участник сети"}</div>
               </div>
-              <div className="flex gap-1.5">
-                <button className="btn-outline text-xs p-2" onClick={() => onStartChat?.(u.id)} title="Написать">
-                  <Icon name="MessageSquare" size={13} />
-                </button>
-                <button className={u.is_following ? "btn-outline text-xs px-3 py-1.5" : "btn-primary text-xs px-3 py-1.5"} onClick={() => toggleFollow(u)}>
-                  {u.is_following ? "Подписан" : "+"}
-                </button>
-              </div>
+              <button
+                className={u.is_following ? "btn-outline text-xs px-3 py-1.5" : "btn-primary text-xs px-3 py-1.5"}
+                onClick={() => toggleFollow(u)}
+              >
+                {u.is_following ? "Подписан" : "+ Подписаться"}
+              </button>
             </div>
           ))}
           {!loading && users.length === 0 && (
@@ -1545,199 +802,91 @@ function SearchPage({ onStartChat, onOpenProfile }: { onStartChat?: (userId: num
   );
 }
 
-function MessagesPage({ currentUser }: { currentUser: User | null }) {
-  const [convs, setConvs] = useState<Conversation[]>([]);
-  const [activeConv, setActiveConv] = useState<Conversation | null>(null);
-  const [messages, setMessages] = useState<ChatMessage[]>([]);
+function MessagesPage() {
+  const [activeChat, setActiveChat] = useState<number>(1);
   const [newMsg, setNewMsg] = useState("");
-  const [loadingConvs, setLoadingConvs] = useState(true);
-  const [loadingMsgs, setLoadingMsgs] = useState(false);
-  const [sendingMedia, setSendingMedia] = useState(false);
-  const [mediaViewer, setMediaViewer] = useState<{ url: string; type: string } | null>(null);
-  const [showMobileChat, setShowMobileChat] = useState(false);
-  const messagesEndRef = { current: null as HTMLDivElement | null };
-  const fileRef = { current: null as HTMLInputElement | null };
-  const docRef = { current: null as HTMLInputElement | null };
-
-  useEffect(() => {
-    apiPost(SOCIAL_URL, { action: "chat_list" }).then((r) => {
-      setConvs((r.data.conversations as Conversation[]) || []);
-      setLoadingConvs(false);
-    });
-  }, []);
-
-  useEffect(() => {
-    if (messagesEndRef.current) messagesEndRef.current.scrollIntoView({ behavior: "smooth" });
-  }, [messages]);
-
-  // Push уведомления
-  useEffect(() => {
-    if (!("Notification" in window) || !currentUser) return;
-    if (Notification.permission === "default") Notification.requestPermission();
-  }, [currentUser]);
-
-  const openConv = async (conv: Conversation) => {
-    setActiveConv(conv);
-    setShowMobileChat(true);
-    setLoadingMsgs(true);
-    const r = await apiPost(SOCIAL_URL, { action: "chat_messages", conv_id: conv.id });
-    setMessages((r.data.messages as ChatMessage[]) || []);
-    setLoadingMsgs(false);
-  };
-
-  const sendMessage = async (mediaUrl = "", mediaType = "") => {
-    if (!activeConv) return;
-    if (!newMsg.trim() && !mediaUrl) return;
-    const r = await apiPost(SOCIAL_URL, {
-      action: "chat_send", partner_id: activeConv.partner.id,
-      text: newMsg.trim(), media_url: mediaUrl, media_type: mediaType,
-    });
-    if (r.ok && r.data.message) {
-      setMessages((prev) => [...prev, r.data.message as ChatMessage]);
-      setNewMsg("");
-      setConvs((prev) => prev.map((c) => c.id === activeConv.id
-        ? { ...c, last_message: newMsg.trim() || "📎 Вложение", last_at: new Date().toISOString() } : c));
-    }
-  };
-
-  const handleFileSend = async (e: React.ChangeEvent<HTMLInputElement>, isDoc = false) => {
-    const file = e.target.files?.[0];
-    if (!file || !activeConv) return;
-    setSendingMedia(true);
-    const b64 = await readFileAsBase64(file);
-    let fileType = file.type;
-    if (isDoc && !fileType) fileType = "application/octet-stream";
-    const mediaType = fileType.startsWith("video/") ? "video" : fileType.startsWith("image/") ? "image" : "document";
-    const r = await apiPost(SOCIAL_URL, { action: "upload_media", file_data: b64, file_type: fileType });
-    setSendingMedia(false);
-    if (r.ok) await sendMessage(r.data.url as string, mediaType);
-    e.target.value = "";
-  };
-
-  const myInitials = currentUser ? getInitials(currentUser.full_name) : "?";
-
-  const ConvList = () => (
-    <div className="flex-1 overflow-y-auto">
-      {loadingConvs && [1,2,3].map((i) => <div key={i} className="h-16 mx-3 my-1 rounded-lg shimmer" />)}
-      {!loadingConvs && convs.length === 0 && (
-        <div className="text-center py-10 px-4" style={{ color: "hsl(220,15%,55%)" }}>
-          <Icon name="MessageSquare" size={28} className="mx-auto mb-2 opacity-30" />
-          <div className="text-xs">Найдите людей в Поиске и начните диалог</div>
-        </div>
-      )}
-      {convs.map((conv) => (
-        <button key={conv.id}
-          className={`w-full px-3 py-3 flex items-center gap-3 text-left transition-colors border-b ${activeConv?.id === conv.id ? "bg-blue-50" : "hover:bg-gray-50"}`}
-          style={{ borderColor: "hsl(216,20%,93%)" }}
-          onClick={() => openConv(conv)}>
-          <Avatar initials={conv.partner.initials} avatarUrl={conv.partner.avatar_url} size="sm" />
-          <div className="flex-1 min-w-0">
-            <div className="flex items-center justify-between">
-              <span className="font-medium text-xs">{conv.partner.full_name}</span>
-              <span className="text-xs" style={{ color: "hsl(220,15%,60%)" }}>{timeAgo(conv.last_at)}</span>
-            </div>
-            <div className="text-xs truncate mt-0.5" style={{ color: "hsl(220,15%,55%)" }}>{conv.last_message}</div>
-          </div>
-        </button>
-      ))}
-    </div>
-  );
-
-  const ChatWindow = () => (
-    activeConv ? (
-      <div className="flex-1 flex flex-col min-w-0 h-full">
-        {mediaViewer && <MediaViewer url={mediaViewer.url} type={mediaViewer.type} onClose={() => setMediaViewer(null)} />}
-        <div className="px-4 py-3 border-b flex items-center gap-3 bg-card flex-shrink-0" style={{ borderColor: "hsl(216,20%,88%)" }}>
-          <button className="md:hidden p-1 rounded" style={{ color: "hsl(213,80%,40%)" }} onClick={() => setShowMobileChat(false)}>
-            <Icon name="ArrowLeft" size={18} />
-          </button>
-          <Avatar initials={activeConv.partner.initials} avatarUrl={activeConv.partner.avatar_url} size="sm" />
-          <div>
-            <div className="font-semibold text-sm">{activeConv.partner.full_name}</div>
-            <div className="text-xs" style={{ color: "hsl(220,15%,55%)" }}>{activeConv.partner.job_title}</div>
-          </div>
-        </div>
-
-        <div className="flex-1 overflow-y-auto px-3 py-4 space-y-2" style={{ background: "hsl(216,20%,97%)" }}>
-          {loadingMsgs && <div className="text-center text-xs py-4" style={{ color: "hsl(220,15%,60%)" }}>Загрузка...</div>}
-          {messages.map((msg) => (
-            <div key={msg.id} className={`flex items-end gap-2 ${msg.is_me ? "justify-end" : "justify-start"}`}>
-              {!msg.is_me && <Avatar initials={msg.sender_initials} avatarUrl={msg.sender_avatar} size="sm" />}
-              <div className={`max-w-xs md:max-w-sm ${msg.is_me ? "message-bubble-me" : "message-bubble-other"}`}>
-                {msg.media_url && msg.media_type === "image" && (
-                  <img src={msg.media_url} alt="media" className="rounded-lg max-w-full max-h-52 object-cover mb-1 cursor-pointer" onClick={() => setMediaViewer({ url: msg.media_url, type: "image" })} />
-                )}
-                {msg.media_url && msg.media_type === "video" && (
-                  <video src={msg.media_url} controls className="rounded-lg max-w-full max-h-52 mb-1" />
-                )}
-                {msg.media_url && msg.media_type === "document" && (
-                  <a href={msg.media_url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-2 px-3 py-2 rounded-lg mb-1" style={{ background: "rgba(255,255,255,0.2)" }}>
-                    <Icon name="FileText" size={16} />
-                    <span className="text-xs truncate">Документ</span>
-                  </a>
-                )}
-                {msg.text && <p className="px-4 py-2.5 text-sm break-words">{msg.text}</p>}
-                {!msg.text && msg.media_url && <div className="px-4 pb-1" />}
-                <div className="text-xs px-4 pb-2 text-right opacity-70">{timeAgo(msg.created_at)}</div>
-              </div>
-              {msg.is_me && <Avatar initials={myInitials} avatarUrl={currentUser?.avatar_url} size="sm" />}
-            </div>
-          ))}
-          <div ref={(el) => { messagesEndRef.current = el; }} />
-        </div>
-
-        <div className="px-3 py-2.5 border-t bg-card flex items-center gap-2 flex-shrink-0" style={{ borderColor: "hsl(216,20%,88%)" }}>
-          <div className="flex gap-1">
-            <button className="p-2 rounded-lg hover:bg-muted" onClick={() => fileRef.current?.click()} disabled={sendingMedia} title="Фото/Видео" style={{ color: "hsl(220,15%,50%)" }}>
-              {sendingMedia ? <Icon name="Loader" size={16} className="animate-spin" /> : <Icon name="Image" size={16} />}
-            </button>
-            <button className="p-2 rounded-lg hover:bg-muted" onClick={() => docRef.current?.click()} disabled={sendingMedia} title="Документ" style={{ color: "hsl(220,15%,50%)" }}>
-              <Icon name="Paperclip" size={16} />
-            </button>
-          </div>
-          <input
-            className="flex-1 px-4 py-2 rounded-full border text-sm outline-none focus:border-blue-400"
-            style={{ borderColor: "hsl(216,20%,85%)", color: "hsl(220,30%,15%)" }}
-            placeholder="Написать сообщение..."
-            value={newMsg}
-            onChange={(e) => setNewMsg(e.target.value)}
-            onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendMessage(); } }}
-          />
-          <button className="btn-primary px-3 py-2 rounded-full flex-shrink-0" onClick={() => sendMessage()} disabled={!newMsg.trim()}>
-            <Icon name="Send" size={15} />
-          </button>
-        </div>
-      </div>
-    ) : (
-      <div className="flex-1 hidden md:flex items-center justify-center" style={{ color: "hsl(220,15%,60%)" }}>
-        <div className="text-center">
-          <Icon name="MessageSquare" size={40} className="mx-auto mb-3 opacity-30" />
-          <div className="text-sm font-medium mb-1">Выберите диалог</div>
-          <div className="text-xs">Или найдите человека через Поиск</div>
-        </div>
-      </div>
-    )
-  );
 
   return (
     <div className="flex" style={{ height: "calc(100vh - 3rem)" }}>
-      <input ref={(el) => { fileRef.current = el; }} type="file" accept="image/*,video/*" className="hidden" onChange={(e) => handleFileSend(e, false)} />
-      <input ref={(el) => { docRef.current = el; }} type="file" accept="*/*" className="hidden" onChange={(e) => handleFileSend(e, true)} />
-
-      {/* Desktop: side-by-side */}
-      <div className={`w-full md:w-72 flex-shrink-0 border-r flex flex-col ${showMobileChat ? "hidden md:flex" : "flex"}`} style={{ borderColor: "hsl(216,20%,88%)" }}>
-        <div className="px-3 py-3 border-b flex-shrink-0" style={{ borderColor: "hsl(216,20%,88%)" }}>
+      <div className="w-72 flex-shrink-0 border-r overflow-y-auto" style={{ borderColor: "hsl(216,20%,88%)" }}>
+        <div className="px-3 py-3 border-b" style={{ borderColor: "hsl(216,20%,88%)" }}>
           <div className="relative">
             <Icon name="Search" size={14} className="absolute left-3 top-1/2 -translate-y-1/2" style={{ color: "hsl(220,15%,60%)" }} />
-            <input className="w-full pl-8 pr-3 py-2 rounded-md border text-xs outline-none bg-card" style={{ borderColor: "hsl(216,20%,87%)", color: "hsl(220,30%,20%)" }} placeholder="Поиск диалогов..." />
+            <input className="w-full pl-8 pr-3 py-2 rounded-md border text-xs outline-none bg-card" style={{ borderColor: "hsl(216,20%,87%)", color: "hsl(220,30%,20%)" }} placeholder="Поиск чатов..." />
           </div>
         </div>
-        <ConvList />
+        {conversations.map((conv) => (
+          <button
+            key={conv.id}
+            className={`w-full px-3 py-3 flex items-center gap-3 text-left transition-colors border-b ${activeChat === conv.id ? "bg-blue-50" : "hover:bg-gray-50"}`}
+            style={{ borderColor: "hsl(216,20%,93%)" }}
+            onClick={() => setActiveChat(conv.id)}
+          >
+            <div className="relative">
+              <Avatar initials={conv.avatar} size="sm" />
+              {conv.online && <span className="absolute bottom-0 right-0 w-2.5 h-2.5 rounded-full border-2 border-card" style={{ background: "hsl(142,70%,42%)" }} />}
+            </div>
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center justify-between">
+                <span className="font-medium text-xs">{conv.name}</span>
+                <span className="text-xs" style={{ color: "hsl(220,15%,60%)" }}>{conv.time}</span>
+              </div>
+              <div className="text-xs truncate mt-0.5" style={{ color: "hsl(220,15%,55%)" }}>{conv.last}</div>
+            </div>
+            {conv.unread > 0 && (
+              <span className="w-5 h-5 rounded-full flex items-center justify-center text-white flex-shrink-0 font-bold" style={{ background: "hsl(213,80%,40%)", fontSize: "10px" }}>
+                {conv.unread}
+              </span>
+            )}
+          </button>
+        ))}
       </div>
 
-      {/* Chat — full screen on mobile when open */}
-      <div className={`flex-1 flex flex-col min-w-0 ${showMobileChat ? "flex" : "hidden md:flex"}`}>
-        <ChatWindow />
+      <div className="flex-1 flex flex-col min-w-0">
+        {(() => {
+          const conv = conversations.find((c) => c.id === activeChat)!;
+          return (
+            <>
+              <div className="px-5 py-3 border-b flex items-center gap-3 bg-card flex-shrink-0" style={{ borderColor: "hsl(216,20%,88%)" }}>
+                <div className="relative">
+                  <Avatar initials={conv.avatar} size="sm" />
+                  {conv.online && <span className="absolute bottom-0 right-0 w-2.5 h-2.5 rounded-full border-2 border-card" style={{ background: "hsl(142,70%,42%)" }} />}
+                </div>
+                <div>
+                  <div className="font-semibold text-sm">{conv.name}</div>
+                  <div className="text-xs" style={{ color: conv.online ? "hsl(142,70%,38%)" : "hsl(220,15%,55%)" }}>{conv.online ? "В сети" : "Не в сети"}</div>
+                </div>
+                <div className="ml-auto flex items-center gap-2">
+                  <button className="btn-outline p-2"><Icon name="Phone" size={13} /></button>
+                  <button className="btn-outline p-2"><Icon name="Video" size={13} /></button>
+                </div>
+              </div>
+
+              <div className="flex-1 overflow-y-auto px-5 py-4 space-y-3" style={{ background: "hsl(216,20%,97%)" }}>
+                {chatMessages.map((msg) => (
+                  <div key={msg.id} className={`flex ${msg.me ? "justify-end" : "justify-start"}`}>
+                    <div className={`max-w-sm px-4 py-2.5 text-sm ${msg.me ? "message-bubble-me" : "message-bubble-other"}`}>
+                      <p>{msg.text}</p>
+                      <div className="text-xs mt-1 text-right" style={{ color: msg.me ? "rgba(255,255,255,0.6)" : "hsl(220,15%,60%)" }}>{msg.time}</div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              <div className="px-4 py-3 border-t bg-card flex items-center gap-2 flex-shrink-0" style={{ borderColor: "hsl(216,20%,88%)" }}>
+                <button className="btn-outline p-2"><Icon name="Paperclip" size={15} /></button>
+                <input
+                  className="flex-1 px-4 py-2 rounded-full border text-sm outline-none focus:border-blue-400"
+                  style={{ borderColor: "hsl(216,20%,85%)", color: "hsl(220,30%,15%)" }}
+                  placeholder="Написать сообщение..."
+                  value={newMsg}
+                  onChange={(e) => setNewMsg(e.target.value)}
+                />
+                <button className="btn-primary px-4 py-2 rounded-full"><Icon name="Send" size={15} /></button>
+              </div>
+            </>
+          );
+        })()}
       </div>
     </div>
   );
@@ -1755,33 +904,29 @@ function EditProfileModal({
   const [fullName, setFullName] = useState(user.full_name);
   const [jobTitle, setJobTitle] = useState(user.job_title);
   const [bio, setBio] = useState(user.bio);
-  const [socialVk, setSocialVk] = useState(user.social_vk || "");
-  const [socialTg, setSocialTg] = useState(user.social_tg || "");
-  const [socialLi, setSocialLi] = useState(user.social_linkedin || "");
-  const [socialIg, setSocialIg] = useState(user.social_instagram || "");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
   const handleSave = async () => {
     if (!fullName.trim()) { setError("Имя не может быть пустым"); return; }
-    setLoading(true); setError("");
+    setLoading(true);
+    setError("");
     const token = localStorage.getItem("nexus_token") || "";
-    const [r1, r2] = await Promise.all([
-      fetch(AUTH_URL, { method: "POST", headers: { "Content-Type": "application/json", "X-Auth-Token": token },
-        body: JSON.stringify({ action: "update_profile", full_name: fullName.trim(), job_title: jobTitle.trim(), bio: bio.trim() }) }),
-      apiPost(SOCIAL_URL, { action: "update_socials", social_vk: socialVk.trim(), social_tg: socialTg.trim(),
-        social_linkedin: socialLi.trim(), social_instagram: socialIg.trim() }),
-    ]);
-    const text = await r1.text();
+    const res = await fetch(AUTH_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "X-Auth-Token": token },
+      body: JSON.stringify({ action: "update_profile", full_name: fullName.trim(), job_title: jobTitle.trim(), bio: bio.trim() }),
+    });
+    const text = await res.text();
     let json: Record<string, unknown> = {};
     try { json = JSON.parse(text); } catch { /* ignore */ }
     if (typeof json === "string") { try { json = JSON.parse(json as string); } catch { /* ignore */ } }
     setLoading(false);
-    if (!r1.ok) { setError((json.error as string) || "Ошибка сохранения"); return; }
-    const updated = { ...(json as unknown as User), social_vk: socialVk, social_tg: socialTg, social_linkedin: socialLi, social_instagram: socialIg };
+    if (!res.ok) { setError((json.error as string) || "Ошибка сохранения"); return; }
+    const updated = json as unknown as User;
     localStorage.setItem("nexus_user", JSON.stringify(updated));
     onSave(updated);
-    if (r2.ok) onClose();
+    onClose();
   };
 
   return (
@@ -1833,31 +978,11 @@ function EditProfileModal({
             <textarea
               className="w-full px-3.5 py-2.5 rounded-lg border text-sm outline-none focus:border-blue-400 transition-all resize-none"
               style={{ borderColor: "hsl(216,20%,85%)", color: "hsl(220,30%,15%)" }}
-              rows={3}
+              rows={4}
               value={bio}
               onChange={(e) => setBio(e.target.value)}
               placeholder="Расскажите о своём опыте и специализации..."
             />
-          </div>
-
-          <div>
-            <label className="block text-xs font-medium mb-2" style={{ color: "hsl(220,15%,45%)" }}>Социальные сети</label>
-            <div className="space-y-2">
-              {[
-                { label: "ВКонтакте (username)", val: socialVk, set: setSocialVk, ph: "username" },
-                { label: "Telegram (username)", val: socialTg, set: setSocialTg, ph: "username" },
-                { label: "LinkedIn (username)", val: socialLi, set: setSocialLi, ph: "username" },
-                { label: "Instagram (username)", val: socialIg, set: setSocialIg, ph: "username" },
-              ].map((s) => (
-                <input key={s.label}
-                  className="w-full px-3.5 py-2 rounded-lg border text-sm outline-none focus:border-blue-400 transition-all"
-                  style={{ borderColor: "hsl(216,20%,85%)", color: "hsl(220,30%,15%)" }}
-                  placeholder={`${s.label}`}
-                  value={s.val}
-                  onChange={(e) => s.set(e.target.value.replace(/^@/, ""))}
-                />
-              ))}
-            </div>
           </div>
 
           {error && (
@@ -1890,438 +1015,106 @@ function EditProfileModal({
 
 function ProfilePage({ user, onUserUpdate }: { user?: User; onUserUpdate?: (u: User) => void }) {
   const [editOpen, setEditOpen] = useState(false);
-  const [uploadingAvatar, setUploadingAvatar] = useState(false);
-  const [uploadingCover, setUploadingCover] = useState(false);
-  const [stats, setStats] = useState<UserStats | null>(null);
-  const [userPosts, setUserPosts] = useState<Post[]>([]);
-  const [loadingPosts, setLoadingPosts] = useState(false);
-  const [postView, setPostView] = useState<"grid" | "list">("grid");
-  const [followersModal, setFollowersModal] = useState<"followers" | "following" | null>(null);
-  const [followUsers, setFollowUsers] = useState<{ id: number; full_name: string; job_title: string; avatar_url: string; initials: string; is_following: boolean }[]>([]);
-  const [mediaViewer, setMediaViewer] = useState<{ url: string; type: string } | null>(null);
-  const avatarInputRef = { current: null as HTMLInputElement | null };
-  const coverInputRef = { current: null as HTMLInputElement | null };
-
   const displayName = user?.full_name || "Пользователь";
   const displayTitle = user?.job_title || "Участник сети";
   const displayBio = user?.bio || "";
   const displayInitials = getInitials(displayName);
-
-  useEffect(() => {
-    if (!user?.id) return;
-    apiPost(SOCIAL_URL, { action: "get_stats" }).then((r) => {
-      if (r.ok) setStats(r.data as unknown as UserStats);
-    });
-    setLoadingPosts(true);
-    apiPost(POSTS_URL, { action: "user_posts", user_id: user.id }).then((r) => {
-      setUserPosts((r.data.posts as Post[]) || []);
-      setLoadingPosts(false);
-    });
-  }, [user?.id]);
-
-  const handleAvatarUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    setUploadingAvatar(true);
-    const b64 = await readFileAsBase64(file);
-    const r = await apiPost(SOCIAL_URL, { action: "update_avatar", file_data: b64, file_type: file.type });
-    setUploadingAvatar(false);
-    if (r.ok && r.data.avatar_url) {
-      const updated = { ...user!, avatar_url: r.data.avatar_url as string };
-      onUserUpdate?.(updated);
-      localStorage.setItem("nexus_user", JSON.stringify(updated));
-    }
-  };
-
-  const handleCoverUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    setUploadingCover(true);
-    const b64 = await readFileAsBase64(file);
-    const r = await apiPost(SOCIAL_URL, { action: "upload_cover", file_data: b64, file_type: file.type });
-    setUploadingCover(false);
-    if (r.ok && r.data.cover_url) {
-      const updated = { ...user!, cover_url: r.data.cover_url as string };
-      onUserUpdate?.(updated);
-      localStorage.setItem("nexus_user", JSON.stringify(updated));
-    }
-  };
-
-  const handleDeletePost = (postId: number) => {
-    setUserPosts((prev) => prev.filter((p) => p.id !== postId));
-    if (stats) setStats({ ...stats, posts: Math.max(0, stats.posts - 1) });
-  };
-
-  const openFollowModal = async (type: "followers" | "following") => {
-    setFollowersModal(type);
-    setFollowUsers([]);
-    const action = type === "followers" ? "get_followers" : "get_following";
-    const r = await apiPost(POSTS_URL, { action });
-    setFollowUsers((r.data.users as typeof followUsers) || []);
-  };
-
-  const socials = [
-    { key: "social_vk", label: "ВКонтакте", icon: "Globe", color: "hsl(213,90%,50%)", prefix: "https://vk.com/", value: user?.social_vk },
-    { key: "social_tg", label: "Telegram", icon: "Send", color: "hsl(200,90%,45%)", prefix: "https://t.me/", value: user?.social_tg },
-    { key: "social_linkedin", label: "LinkedIn", icon: "Briefcase", color: "hsl(210,90%,40%)", prefix: "https://linkedin.com/in/", value: user?.social_linkedin },
-    { key: "social_instagram", label: "Instagram", icon: "Camera", color: "hsl(320,80%,55%)", prefix: "https://instagram.com/", value: user?.social_instagram },
-  ].filter((s) => s.value);
-
-  const mediaOnly = userPosts.filter((p) => p.media_url);
-  const allStats = [
-    { label: "Подписчиков", value: stats ? stats.followers.toLocaleString("ru") : "…" },
-    { label: "Подписок", value: stats ? stats.following.toLocaleString("ru") : "…" },
-    { label: "Постов", value: stats ? stats.posts.toLocaleString("ru") : "…" },
-    { label: "Просмотров", value: stats ? stats.views.toLocaleString("ru") : "…" },
+  const stats = [
+    { label: "Подписчиков", value: "1 284" },
+    { label: "Подписок", value: "347" },
+    { label: "Постов", value: "89" },
+    { label: "Просмотров", value: "48.2K" },
   ];
 
   return (
     <>
-      <input ref={(el) => { avatarInputRef.current = el; }} type="file" accept="image/*" className="hidden" onChange={handleAvatarUpload} />
-      <input ref={(el) => { coverInputRef.current = el; }} type="file" accept="image/*" className="hidden" onChange={handleCoverUpload} />
       {editOpen && user && (
-        <EditProfileModal user={user} onClose={() => setEditOpen(false)} onSave={(u) => { onUserUpdate?.(u); }} />
-      )}
-      {mediaViewer && <MediaViewer url={mediaViewer.url} type={mediaViewer.type} onClose={() => setMediaViewer(null)} />}
-      {followersModal && (
-        <UsersListModal
-          title={followersModal === "followers" ? "Подписчики" : "Подписки"}
-          users={followUsers}
-          onClose={() => setFollowersModal(null)}
-          onFollowToggle={(uid, following) => setFollowUsers((prev) => prev.map((u) => u.id === uid ? { ...u, is_following: following } : u))}
+        <EditProfileModal
+          user={user}
+          onClose={() => setEditOpen(false)}
+          onSave={(u) => { onUserUpdate?.(u); }}
         />
       )}
     <div className="max-w-3xl mx-auto px-4 py-5">
-      <div className="post-card mb-4 overflow-hidden p-0">
-        {/* Cover — кликабельная, загрузка фото */}
-        <div className="relative w-full group cursor-pointer" style={{ height: 160 }} onClick={() => coverInputRef.current?.click()}>
-          {user?.cover_url
-            ? <img src={user.cover_url} alt="cover" className="w-full h-full object-cover" />
-            : <div className="w-full h-full" style={{ background: "linear-gradient(135deg, hsl(221,55%,20%) 0%, hsl(213,80%,35%) 100%)" }} />}
-          <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity" style={{ background: "rgba(0,0,0,0.3)" }}>
-            {uploadingCover
-              ? <Icon name="Loader" size={24} style={{ color: "white" }} className="animate-spin" />
-              : <div className="flex flex-col items-center gap-1"><Icon name="Camera" size={24} style={{ color: "white" }} /><span className="text-xs text-white">Изменить обложку</span></div>}
+      <div className="post-card mb-4">
+        <div
+          className="h-24 rounded-lg -mx-5 -mt-5 mb-4"
+          style={{ background: "linear-gradient(135deg, hsl(221,55%,20%) 0%, hsl(213,80%,35%) 100%)" }}
+        />
+        <div className="flex items-end gap-4 -mt-10 mb-4">
+          <div
+            className="w-16 h-16 rounded-full border-4 border-card flex items-center justify-center text-base font-bold text-white flex-shrink-0"
+            style={{ background: "hsl(213,80%,40%)" }}
+          >
+            {displayInitials}
+          </div>
+          <div className="pb-1 flex-1">
+            <h1 className="font-bold text-lg">{displayName}</h1>
+            <p className="text-sm" style={{ color: "hsl(220,15%,50%)" }}>{displayTitle}</p>
+          </div>
+          <div className="pb-1 flex gap-2">
+            <button className="btn-primary text-xs px-4 py-2" onClick={() => setEditOpen(true)}>Редактировать</button>
+            <button className="btn-outline text-xs px-3 py-2"><Icon name="Share2" size={13} /></button>
           </div>
         </div>
 
-        <div className="px-5 pb-5">
-          {/* Avatar row — ниже обложки */}
-          <div className="flex items-end justify-between -mt-10 mb-3">
-            <div className="relative flex-shrink-0 group cursor-pointer" onClick={() => avatarInputRef.current?.click()}>
-              {user?.avatar_url
-                ? <img src={user.avatar_url} alt={displayInitials} className="w-20 h-20 rounded-full border-4 object-cover" style={{ borderColor: "white" }} />
-                : <div className="w-20 h-20 rounded-full border-4 flex items-center justify-center text-xl font-bold text-white" style={{ background: "hsl(213,80%,40%)", borderColor: "white" }}>{displayInitials}</div>}
-              <div className="absolute inset-0 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity" style={{ background: "rgba(0,0,0,0.45)" }}>
-                {uploadingAvatar ? <Icon name="Loader" size={20} style={{ color: "white" }} className="animate-spin" /> : <Icon name="Camera" size={20} style={{ color: "white" }} />}
-              </div>
+        {displayBio ? (
+          <p className="text-sm leading-relaxed mb-4" style={{ color: "hsl(220,25%,25%)" }}>{displayBio}</p>
+        ) : (
+          <p
+            className="text-sm leading-relaxed mb-4 italic cursor-pointer hover:underline"
+            style={{ color: "hsl(220,15%,65%)" }}
+            onClick={() => setEditOpen(true)}
+          >
+            Добавьте информацию о себе...
+          </p>
+        )}
+
+        <div className="grid grid-cols-4 gap-3 pt-4 border-t" style={{ borderColor: "hsl(216,20%,90%)" }}>
+          {stats.map((s) => (
+            <div key={s.label} className="text-center">
+              <div className="font-bold text-lg" style={{ color: "hsl(221,65%,22%)" }}>{s.value}</div>
+              <div className="text-xs" style={{ color: "hsl(220,15%,55%)" }}>{s.label}</div>
             </div>
-            <div className="flex gap-2 items-center pt-1 flex-shrink-0">
-              <button className="btn-primary text-xs px-4 py-2" onClick={() => setEditOpen(true)}>Редактировать</button>
-            </div>
-          </div>
-
-          {/* Name + title */}
-          <div className="pt-1 pb-3">
-            <h1 className="font-bold text-xl leading-tight">{displayName}</h1>
-            <p className="text-sm mt-0.5" style={{ color: "hsl(220,15%,50%)" }}>{displayTitle}</p>
-            {socials.length > 0 && (
-              <div className="flex items-center gap-2 mt-2 flex-wrap">
-                {socials.map((s) => (
-                  <a key={s.key} href={`${s.prefix}${s.value}`} target="_blank" rel="noopener noreferrer"
-                    className="flex items-center gap-1 text-xs px-2 py-0.5 rounded-full transition-opacity hover:opacity-75"
-                    style={{ background: `${s.color}15`, color: s.color, border: `1px solid ${s.color}30` }}>
-                    <Icon name={s.icon} size={11} />{s.label}
-                  </a>
-                ))}
-              </div>
-            )}
-            {displayBio && <p className="text-sm mt-2 leading-relaxed" style={{ color: "hsl(220,25%,25%)" }}>{displayBio}</p>}
-            {!displayBio && (
-              <p className="text-sm mt-2 italic cursor-pointer hover:underline" style={{ color: "hsl(220,15%,65%)" }} onClick={() => setEditOpen(true)}>Добавьте информацию о себе...</p>
-            )}
-          </div>
-
-          <div className="grid grid-cols-4 gap-3 pt-3 border-t" style={{ borderColor: "hsl(216,20%,90%)" }}>
-            {allStats.map((s, i) => (
-              <button key={s.label} className="text-center py-1 rounded-lg hover:bg-gray-50 transition-colors"
-                onClick={() => { if (i === 0) openFollowModal("followers"); else if (i === 1) openFollowModal("following"); }}>
-                <div className="font-bold text-lg" style={{ color: "hsl(221,65%,22%)" }}>{s.value}</div>
-                <div className="text-xs" style={{ color: i < 2 ? "hsl(213,80%,40%)" : "hsl(220,15%,55%)" }}>{s.label}</div>
-              </button>
-            ))}
-          </div>
-        </div>
-      </div>
-
-      {/* Analytics */}
-      {stats && (
-        <div className="post-card mb-4">
-          <h2 className="font-semibold text-sm mb-3 flex items-center gap-2">
-            <Icon name="BarChart2" size={15} style={{ color: "hsl(213,80%,40%)" }} />
-            Аналитика
-          </h2>
-          <div className="grid grid-cols-3 gap-3">
-            {[
-              { label: "Просмотры", value: stats.views.toLocaleString("ru"), icon: "Eye" },
-              { label: "Охват", value: stats.reach.toLocaleString("ru"), icon: "Users" },
-              { label: "Подписчики", value: stats.followers.toLocaleString("ru"), icon: "UserPlus" },
-            ].map((m) => (
-              <div key={m.label} className="p-3 rounded-lg" style={{ background: "hsl(216,20%,96%)" }}>
-                <div className="text-xs mb-1 flex items-center gap-1" style={{ color: "hsl(220,15%,55%)" }}>
-                  <Icon name={m.icon} size={11} />{m.label}
-                </div>
-                <div className="font-bold text-base" style={{ color: "hsl(221,65%,22%)" }}>{m.value}</div>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* Posts in profile */}
-      <div className="flex items-center justify-between mb-3">
-        <h2 className="font-semibold text-xs uppercase tracking-wider" style={{ color: "hsl(220,15%,50%)" }}>Публикации</h2>
-        <div className="flex gap-1">
-          <button onClick={() => setPostView("grid")} className={`p-1.5 rounded ${postView === "grid" ? "btn-primary" : "btn-outline"}`}><Icon name="Grid3X3" size={13} /></button>
-          <button onClick={() => setPostView("list")} className={`p-1.5 rounded ${postView === "list" ? "btn-primary" : "btn-outline"}`}><Icon name="List" size={13} /></button>
-        </div>
-      </div>
-
-      {loadingPosts && <div className="h-32 rounded-lg shimmer" />}
-
-      {!loadingPosts && postView === "grid" && (
-        <div>
-          {mediaOnly.length > 0 && (
-            <>
-              <div className="text-xs font-medium mb-2" style={{ color: "hsl(220,15%,50%)" }}>Фото и видео</div>
-              <div className="grid grid-cols-3 gap-1 mb-4">
-                {mediaOnly.map((p) => (
-                  <div key={p.id} className="relative aspect-square rounded-lg overflow-hidden bg-gray-100 cursor-pointer"
-                    onClick={() => setMediaViewer({ url: p.media_url!, type: p.media_type || "image" })}>
-                    {p.media_type === "image"
-                      ? <img src={p.media_url} alt="" className="w-full h-full object-cover" />
-                      : <div className="w-full h-full flex items-center justify-center" style={{ background: "hsl(221,25%,18%)" }}>
-                          <Icon name="Play" size={24} style={{ color: "white" }} />
-                        </div>}
-                    {p.media_type === "video" && (
-                      <span className="absolute top-1 right-1"><Icon name="Video" size={12} style={{ color: "white" }} /></span>
-                    )}
-                    <div className="absolute bottom-0 left-0 right-0 flex items-center gap-2 px-2 py-1" style={{ background: "rgba(0,0,0,0.4)", color: "white", fontSize: "10px" }}>
-                      <Icon name="Heart" size={10} />{p.likes_count}
-                      <Icon name="Eye" size={10} />{p.views_count}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </>
-          )}
-          {userPosts.filter((p) => !p.media_url).length > 0 && (
-            <>
-              <div className="text-xs font-medium mb-2" style={{ color: "hsl(220,15%,50%)" }}>Текстовые посты</div>
-              <div className="space-y-2">
-                {userPosts.filter((p) => !p.media_url).map((p) => (
-                  <div key={p.id} className="post-card py-2 px-4 flex items-start justify-between gap-3">
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm truncate" style={{ color: "hsl(220,25%,20%)" }}>{p.text || "—"}</p>
-                      <div className="text-xs mt-1 flex items-center gap-3" style={{ color: "hsl(220,15%,60%)" }}>
-                        <span>{timeAgo(p.created_at)}</span>
-                        <span className="flex items-center gap-1"><Icon name="Heart" size={11} />{p.likes_count}</span>
-                        <span className="flex items-center gap-1"><Icon name="Eye" size={11} />{p.views_count}</span>
-                      </div>
-                    </div>
-                    {p.is_mine && (
-                      <button className="text-xs px-2 py-1 rounded hover:bg-red-50 flex items-center gap-1" style={{ color: "hsl(0,72%,48%)" }}
-                        onClick={async () => { if (!confirm("Удалить?")) return; await apiPost(POSTS_URL, { action: "delete", post_id: p.id }); handleDeletePost(p.id); }}>
-                        <Icon name="Trash2" size={12} />
-                      </button>
-                    )}
-                  </div>
-                ))}
-              </div>
-            </>
-          )}
-          {!loadingPosts && userPosts.length === 0 && (
-            <div className="post-card text-center py-10" style={{ color: "hsl(220,15%,60%)" }}>
-              <Icon name="FileText" size={28} className="mx-auto mb-2 opacity-30" />
-              <div className="text-sm">Публикаций пока нет</div>
-            </div>
-          )}
-        </div>
-      )}
-
-      {!loadingPosts && postView === "list" && (
-        <div className="space-y-4">
-          {userPosts.map((p) => (
-            <PostCard key={p.id} post={p}
-              onLike={async (id) => { const r = await apiPost(POSTS_URL, { action: "like", post_id: id }); if (r.ok) setUserPosts((prev) => prev.map((pp) => pp.id === id ? { ...pp, liked: r.data.liked as boolean, likes_count: r.data.likes_count as number } : pp)); }}
-              onCommentAdded={(id) => setUserPosts((prev) => prev.map((pp) => pp.id === id ? { ...pp, comments_count: pp.comments_count + 1 } : pp))}
-              onDelete={handleDeletePost}
-              userInitials={displayInitials}
-              userAvatarUrl={user?.avatar_url}
-            />
           ))}
-          {userPosts.length === 0 && (
-            <div className="post-card text-center py-10" style={{ color: "hsl(220,15%,60%)" }}>
-              <Icon name="FileText" size={28} className="mx-auto mb-2 opacity-30" />
-              <div className="text-sm">Публикаций пока нет</div>
-            </div>
-          )}
         </div>
-      )}
+      </div>
+
+      <div className="post-card mb-4">
+        <h2 className="font-semibold text-sm mb-4 flex items-center gap-2">
+          <Icon name="BarChart2" size={15} style={{ color: "hsl(213,80%,40%)" }} />
+          Аналитика за 30 дней
+        </h2>
+        <div className="grid grid-cols-3 gap-3">
+          {[
+            { label: "Просмотры", value: "12 480", change: "+18%", up: true },
+            { label: "Охват", value: "8 930", change: "+24%", up: true },
+            { label: "Подписчики", value: "+127", change: "-3%", up: false },
+          ].map((m) => (
+            <div key={m.label} className="p-3 rounded-lg" style={{ background: "hsl(216,20%,96%)" }}>
+              <div className="text-xs mb-1" style={{ color: "hsl(220,15%,55%)" }}>{m.label}</div>
+              <div className="font-bold text-base" style={{ color: "hsl(221,65%,22%)" }}>{m.value}</div>
+              <div className="text-xs font-medium mt-1 flex items-center gap-1" style={{ color: m.up ? "hsl(142,70%,38%)" : "hsl(0,72%,51%)" }}>
+                <Icon name={m.up ? "TrendingUp" : "TrendingDown"} size={11} />
+                {m.change}
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <h2 className="font-semibold text-xs uppercase tracking-wider mb-3" style={{ color: "hsl(220,15%,50%)" }}>Публикации</h2>
+      <div className="post-card text-center py-10" style={{ color: "hsl(220,15%,60%)" }}>
+        <Icon name="FileText" size={28} className="mx-auto mb-2 opacity-30" />
+        <div className="text-sm">Публикации появятся здесь</div>
+      </div>
     </div>
     </>
   );
 }
 
-function AdminPage() {
-  const [data, setData] = useState<{ users: unknown[]; posts: unknown[]; stats: { total_users: number; total_posts: number; total_views: number } } | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [tab, setTab] = useState<"stats" | "users" | "posts">("stats");
-
-  useEffect(() => {
-    apiPost(POSTS_URL, { action: "admin_data" }).then((r) => {
-      if (r.ok) setData(r.data as typeof data);
-      setLoading(false);
-    });
-  }, []);
-
-  const deleteUser = async (uid: number, name: string) => {
-    if (!confirm(`Удалить пользователя «${name}»? Все его посты тоже удалятся.`)) return;
-    const r = await apiPost(POSTS_URL, { action: "admin_delete_user", user_id: uid });
-    if (r.ok) setData((d) => d ? { ...d, users: d.users.filter((u: unknown) => (u as { id: number }).id !== uid) } : d);
-  };
-
-  const deletePost = async (pid: number) => {
-    if (!confirm("Удалить этот пост?")) return;
-    const r = await apiPost(POSTS_URL, { action: "delete", post_id: pid });
-    if (r.ok) setData((d) => d ? { ...d, posts: d.posts.filter((p: unknown) => (p as { id: number }).id !== pid) } : d);
-  };
-
-  const toggleAdmin = async (uid: number) => {
-    const r = await apiPost(POSTS_URL, { action: "admin_toggle", user_id: uid });
-    if (r.ok) setData((d) => d ? { ...d, users: d.users.map((u: unknown) => (u as { id: number }).id === uid ? { ...(u as object), is_admin: r.data.is_admin } : u) } : d);
-  };
-
-  if (loading) return <div className="max-w-4xl mx-auto px-4 py-10"><div className="h-20 rounded-lg shimmer" /></div>;
-
-  return (
-    <div className="max-w-4xl mx-auto px-4 py-5">
-      <div className="flex items-center gap-3 mb-5">
-        <div className="w-8 h-8 rounded-lg flex items-center justify-center" style={{ background: "hsl(0,72%,48%)" }}>
-          <Icon name="Shield" size={16} style={{ color: "white" }} />
-        </div>
-        <h1 className="font-bold text-lg">Панель администратора</h1>
-      </div>
-
-      <div className="flex gap-2 mb-5">
-        {(["stats", "users", "posts"] as const).map((t) => (
-          <button key={t} onClick={() => setTab(t)} className={tab === t ? "btn-primary text-xs px-4 py-2" : "btn-outline text-xs px-4 py-2"}>
-            {{ stats: "Статистика", users: "Пользователи", posts: "Посты" }[t]}
-          </button>
-        ))}
-      </div>
-
-      {tab === "stats" && data && (
-        <div className="grid grid-cols-3 gap-4">
-          {[
-            { label: "Пользователей", value: data.stats.total_users, icon: "Users", color: "hsl(213,80%,40%)" },
-            { label: "Публикаций", value: data.stats.total_posts, icon: "FileText", color: "hsl(142,70%,38%)" },
-            { label: "Просмотров", value: data.stats.total_views, icon: "Eye", color: "hsl(270,60%,50%)" },
-          ].map((s) => (
-            <div key={s.label} className="post-card text-center py-6">
-              <div className="w-10 h-10 rounded-full flex items-center justify-center mx-auto mb-3" style={{ background: `${s.color}18` }}>
-                <Icon name={s.icon} size={18} style={{ color: s.color }} />
-              </div>
-              <div className="font-bold text-2xl" style={{ color: "hsl(221,65%,22%)" }}>{s.value.toLocaleString("ru")}</div>
-              <div className="text-xs mt-1" style={{ color: "hsl(220,15%,55%)" }}>{s.label}</div>
-            </div>
-          ))}
-        </div>
-      )}
-
-      {tab === "users" && data && (
-        <div className="post-card overflow-hidden p-0">
-          <table className="w-full text-sm">
-            <thead>
-              <tr style={{ background: "hsl(216,20%,96%)" }}>
-                <th className="text-left px-4 py-3 text-xs font-semibold" style={{ color: "hsl(220,15%,50%)" }}>Пользователь</th>
-                <th className="text-left px-4 py-3 text-xs font-semibold" style={{ color: "hsl(220,15%,50%)" }}>Email</th>
-                <th className="text-center px-4 py-3 text-xs font-semibold" style={{ color: "hsl(220,15%,50%)" }}>Постов</th>
-                <th className="text-center px-4 py-3 text-xs font-semibold" style={{ color: "hsl(220,15%,50%)" }}>Подп.</th>
-                <th className="text-center px-4 py-3 text-xs font-semibold" style={{ color: "hsl(220,15%,50%)" }}>Действия</th>
-              </tr>
-            </thead>
-            <tbody>
-              {(data.users as { id: number; email: string; full_name: string; job_title: string; is_admin: boolean; posts_count: number; followers_count: number }[]).map((u) => (
-                <tr key={u.id} className="border-t" style={{ borderColor: "hsl(216,20%,92%)" }}>
-                  <td className="px-4 py-3">
-                    <div className="font-medium text-sm">{u.full_name}</div>
-                    <div className="text-xs" style={{ color: "hsl(220,15%,55%)" }}>{u.job_title || "—"}</div>
-                  </td>
-                  <td className="px-4 py-3 text-xs" style={{ color: "hsl(220,15%,55%)" }}>{u.email}</td>
-                  <td className="px-4 py-3 text-center text-sm">{u.posts_count}</td>
-                  <td className="px-4 py-3 text-center text-sm">{u.followers_count}</td>
-                  <td className="px-4 py-3">
-                    <div className="flex items-center justify-center gap-2">
-                      <button title={u.is_admin ? "Снять права" : "Сделать админом"}
-                        className="text-xs px-2 py-1 rounded" style={{ background: u.is_admin ? "hsl(0,80%,95%)" : "hsl(216,20%,94%)", color: u.is_admin ? "hsl(0,72%,45%)" : "hsl(220,15%,45%)" }}
-                        onClick={() => toggleAdmin(u.id)}>
-                        <Icon name={u.is_admin ? "ShieldOff" : "Shield"} size={12} />
-                      </button>
-                      <button title="Удалить" className="text-xs px-2 py-1 rounded" style={{ background: "hsl(0,80%,95%)", color: "hsl(0,72%,45%)" }}
-                        onClick={() => deleteUser(u.id, u.full_name)}>
-                        <Icon name="Trash2" size={12} />
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
-
-      {tab === "posts" && data && (
-        <div className="space-y-2">
-          {(data.posts as { id: number; text: string; created_at: string; author: string; likes_count: number; views_count: number; media_type: string }[]).map((p) => (
-            <div key={p.id} className="post-card flex items-start gap-3">
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-2 mb-1">
-                  <span className="font-medium text-xs">{p.author}</span>
-                  <span className="text-xs" style={{ color: "hsl(220,15%,62%)" }}>{timeAgo(p.created_at)}</span>
-                  {p.media_type && <span className="text-xs px-1.5 py-0.5 rounded" style={{ background: "hsl(213,80%,94%)", color: "hsl(213,80%,40%)" }}>{p.media_type}</span>}
-                </div>
-                <p className="text-sm" style={{ color: "hsl(220,25%,22%)" }}>{p.text || "—"}</p>
-                <div className="flex gap-3 mt-1 text-xs" style={{ color: "hsl(220,15%,60%)" }}>
-                  <span className="flex items-center gap-1"><Icon name="Heart" size={11} />{p.likes_count}</span>
-                  <span className="flex items-center gap-1"><Icon name="Eye" size={11} />{p.views_count}</span>
-                </div>
-              </div>
-              <button className="text-xs px-2 py-1 rounded flex-shrink-0" style={{ background: "hsl(0,80%,95%)", color: "hsl(0,72%,45%)" }} onClick={() => deletePost(p.id)}>
-                <Icon name="Trash2" size={13} />
-              </button>
-            </div>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
-
 function getInitials(name: string) {
   return name.split(" ").map((w) => w[0]).join("").slice(0, 2).toUpperCase();
-}
-
-function requestPushPermission() {
-  if ("Notification" in window && Notification.permission === "default") {
-    Notification.requestPermission();
-  }
-}
-
-function sendPushNotification(title: string, body: string) {
-  if ("Notification" in window && Notification.permission === "granted") {
-    new Notification(title, { body, icon: "/favicon.ico" });
-  }
 }
 
 export default function Index() {
@@ -2330,48 +1123,22 @@ export default function Index() {
   const [authChecked, setAuthChecked] = useState(false);
   const [showCreatePost, setShowCreatePost] = useState(false);
   const [unreadCount, setUnreadCount] = useState(0);
-  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
-  const [isAdmin, setIsAdmin] = useState(false);
-  const [viewingUserId, setViewingUserId] = useState<number | null>(null);
-  // Связанные аккаунты для переключения (токен → user)
-  const [linkedAccounts, setLinkedAccounts] = useState<{ token: string; user: User }[]>(() => {
-    try { return JSON.parse(localStorage.getItem("nexus_linked_accounts") || "[]"); } catch { return []; }
-  });
 
   useEffect(() => {
     const token = localStorage.getItem("nexus_token");
     const saved = localStorage.getItem("nexus_user");
     if (token && saved) {
-      try {
-        const u = JSON.parse(saved);
-        setCurrentUser(u);
-        // Проверяем is_admin через get_profile
-        fetch(SOCIAL_URL, { method: "POST", headers: { "Content-Type": "application/json", "X-Auth-Token": token }, body: JSON.stringify({ action: "get_profile" }) })
-          .then((r) => r.text()).then((t) => {
-            let j: Record<string, unknown> = {};
-            try { j = JSON.parse(t); } catch { /* ignore */ }
-            if (typeof j === "string") { try { j = JSON.parse(j as string); } catch { /* ignore */ } }
-          });
-        // Проверим через posts admin_data — если успешно, то admin
-        fetch(POSTS_URL, { method: "POST", headers: { "Content-Type": "application/json", "X-Auth-Token": token }, body: JSON.stringify({ action: "admin_data" }) })
-          .then((r) => { if (r.ok) setIsAdmin(true); });
-      } catch { /* ignore */ }
+      try { setCurrentUser(JSON.parse(saved)); } catch { /* ignore */ }
     }
     setAuthChecked(true);
   }, []);
 
+  // Подтягиваем счётчик непрочитанных уведомлений
   useEffect(() => {
     if (!currentUser) return;
-    requestPushPermission();
-    let prevCount = 0;
     const fetchCount = () => {
       apiPost(SOCIAL_URL, { action: "unread_count" }).then((r) => {
-        const count = (r.data.count as number) || 0;
-        if (count > prevCount && prevCount !== 0 && document.hidden) {
-          sendPushNotification("NEXUS", `У вас ${count} новых уведомлений`);
-        }
-        prevCount = count;
-        setUnreadCount(count);
+        setUnreadCount((r.data.count as number) || 0);
       });
     };
     fetchCount();
@@ -2379,121 +1146,44 @@ export default function Index() {
     return () => clearInterval(interval);
   }, [currentUser]);
 
-  const handleAuth = (user: User, token: string) => {
-    // Сохраняем текущий аккаунт в связанные (если есть другой активный)
-    const prevToken = localStorage.getItem("nexus_token");
-    const prevUser = localStorage.getItem("nexus_user");
-    if (prevToken && prevUser && prevToken !== token) {
-      try {
-        const pu = JSON.parse(prevUser) as User;
-        setLinkedAccounts((prev) => {
-          const exists = prev.some((a) => a.token === prevToken);
-          const updated = exists ? prev : [...prev, { token: prevToken, user: pu }];
-          localStorage.setItem("nexus_linked_accounts", JSON.stringify(updated));
-          return updated;
-        });
-      } catch { /* ignore */ }
-    }
+  const handleAuth = (user: User, _token: string) => {
     setCurrentUser(user);
-    setIsAdmin(false);
-    requestPushPermission();
-    setTimeout(() => {
-      fetch(POSTS_URL, { method: "POST", headers: { "Content-Type": "application/json", "X-Auth-Token": localStorage.getItem("nexus_token") || "" }, body: JSON.stringify({ action: "admin_data" }) })
-        .then((r) => { if (r.ok) setIsAdmin(true); });
-    }, 500);
   };
 
   const handleLogout = async () => {
     const token = localStorage.getItem("nexus_token");
     if (token) {
-      await fetch(AUTH_URL, { method: "POST", headers: { "Content-Type": "application/json", "X-Auth-Token": token }, body: JSON.stringify({ action: "logout" }) });
+      await fetch(AUTH_URL, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "X-Auth-Token": token },
+        body: JSON.stringify({ action: "logout" }),
+      });
     }
     localStorage.removeItem("nexus_token");
     localStorage.removeItem("nexus_user");
     setCurrentUser(null);
-    setIsAdmin(false);
-  };
-
-  const navigate = (section: Section) => {
-    setActive(section);
-    setViewingUserId(null);
-    setMobileMenuOpen(false);
-    if (section === "notifications") setUnreadCount(0);
-  };
-
-  const openUserProfile = (uid: number) => {
-    if (uid === currentUser?.id) { setActive("profile"); setViewingUserId(null); return; }
-    setViewingUserId(uid);
-  };
-
-  const switchAccount = (token: string, user: User) => {
-    // Сохранить текущий в linked
-    const curToken = localStorage.getItem("nexus_token");
-    const curUser = localStorage.getItem("nexus_user");
-    if (curToken && curUser) {
-      setLinkedAccounts((prev) => {
-        const exists = prev.some((a) => a.token === curToken);
-        const updated = exists ? prev : [...prev, { token: curToken, user: currentUser! }];
-        const filtered = updated.filter((a) => a.token !== token);
-        localStorage.setItem("nexus_linked_accounts", JSON.stringify(filtered));
-        return filtered;
-      });
-    }
-    localStorage.setItem("nexus_token", token);
-    localStorage.setItem("nexus_user", JSON.stringify(user));
-    setCurrentUser(user);
-    setIsAdmin(false);
-    setActive("feed");
-    setViewingUserId(null);
-    fetch(POSTS_URL, { method: "POST", headers: { "Content-Type": "application/json", "X-Auth-Token": token }, body: JSON.stringify({ action: "admin_data" }) })
-      .then((r) => { if (r.ok) setIsAdmin(true); });
   };
 
   if (!authChecked) return null;
   if (!currentUser) return <AuthScreen onAuth={handleAuth} />;
 
   const userInitials = getInitials(currentUser.full_name);
-  const visibleNav = navItems.filter((item) => !item.adminOnly || isAdmin);
-
-  // Если просматриваем чужой профиль
-  if (viewingUserId) {
-    return (
-      <div className="flex h-screen overflow-hidden bg-background font-ibm">
-        <aside className="hidden md:flex w-60 flex-shrink-0 flex-col sidebar-dark">
-          <SidebarContent />
-        </aside>
-        <main className="flex-1 overflow-y-auto pb-16 md:pb-0">
-          <UserProfilePage userId={viewingUserId} currentUser={currentUser}
-            onBack={() => setViewingUserId(null)}
-            onOpenChat={async (uid) => {
-              const r = await apiPost(SOCIAL_URL, { action: "chat_start", partner_id: uid });
-              if (r.ok) { setViewingUserId(null); setActive("messages"); }
-            }} />
-        </main>
-      </div>
-    );
-  }
 
   const renderPage = () => {
     switch (active) {
-      case "feed": return <FeedPage currentUser={currentUser} onOpenProfile={openUserProfile} />;
-      case "friends": return <FriendsPage onOpenProfile={openUserProfile} />;
-      case "groups": return <GroupsPage currentUser={currentUser} />;
-      case "notifications": return <NotificationsPage onOpenProfile={openUserProfile} />;
-      case "search": return <SearchPage onStartChat={async (uid) => {
-        const r = await apiPost(SOCIAL_URL, { action: "chat_start", partner_id: uid });
-        if (r.ok) setActive("messages");
-      }} onOpenProfile={openUserProfile} />;
-      case "messages": return <MessagesPage currentUser={currentUser} />;
-      case "profile": return <ProfilePage user={currentUser} onUserUpdate={(u) => { setCurrentUser(u); localStorage.setItem("nexus_user", JSON.stringify(u)); }} />;
-      case "admin": return <AdminPage />;
+      case "feed": return <FeedPage currentUser={currentUser} />;
+      case "friends": return <FriendsPage />;
+      case "notifications": return <NotificationsPage />;
+      case "search": return <SearchPage />;
+      case "messages": return <MessagesPage />;
+      case "profile": return <ProfilePage user={currentUser} onUserUpdate={(u) => { setCurrentUser(u); }} />;
     }
   };
 
-  const SidebarContent = () => (
-    <>
-      <div className="px-5 py-5 border-b" style={{ borderColor: "hsl(221,25%,20%)" }}>
-        <div className="flex items-center justify-between">
+  return (
+    <div className="flex h-screen overflow-hidden bg-background font-ibm">
+      <aside className="w-60 flex-shrink-0 flex flex-col sidebar-dark">
+        <div className="px-5 py-5 border-b" style={{ borderColor: "hsl(221,25%,20%)" }}>
           <div className="flex items-center gap-3">
             <div className="w-8 h-8 rounded flex items-center justify-center" style={{ background: "hsl(213,80%,42%)" }}>
               <span className="text-white font-bold text-sm font-mono-ibm">N</span>
@@ -2503,121 +1193,75 @@ export default function Index() {
               <div className="text-xs" style={{ color: "hsl(214,25%,48%)" }}>Деловая сеть</div>
             </div>
           </div>
-          <button className="md:hidden p-1 rounded" style={{ color: "hsl(214,25%,55%)" }} onClick={() => setMobileMenuOpen(false)}>
-            <Icon name="X" size={18} />
-          </button>
         </div>
-      </div>
 
-      <nav className="flex-1 px-2.5 py-4 space-y-0.5 overflow-y-auto">
-        {visibleNav.map((item) => (
-          <button key={item.id} onClick={() => navigate(item.id)}
-            className={`nav-item w-full text-left ${active === item.id ? "active" : ""}`}>
-            <div className="relative flex-shrink-0">
-              <Icon name={item.icon} size={17} />
-              {item.id === "notifications" && unreadCount > 0 && active !== "notifications" && (
-                <span className="notification-dot">{unreadCount > 9 ? "9+" : unreadCount}</span>
+        <nav className="flex-1 px-2.5 py-4 space-y-0.5 overflow-y-auto">
+          {navItems.map((item) => (
+            <button
+              key={item.id}
+              onClick={() => { setActive(item.id); if (item.id === "notifications") setUnreadCount(0); }}
+              className={`nav-item w-full text-left ${active === item.id ? "active" : ""}`}
+            >
+              <div className="relative flex-shrink-0">
+                <Icon name={item.icon} size={17} />
+                {item.id === "notifications" && unreadCount > 0 && active !== "notifications" && (
+                  <span className="notification-dot">{unreadCount > 9 ? "9+" : unreadCount}</span>
+                )}
+              </div>
+              <span className="flex-1">{item.label}</span>
+              {item.id === "notifications" && unreadCount > 0 && active === "notifications" && (
+                <span className="text-xs font-bold px-1.5 py-0.5 rounded" style={{ background: "rgba(255,255,255,0.2)", color: "white" }}>
+                  {unreadCount}
+                </span>
               )}
+            </button>
+          ))}
+        </nav>
+
+        <div className="px-3 py-4 border-t" style={{ borderColor: "hsl(221,25%,20%)" }}>
+          <div className="flex items-center gap-2.5">
+            <div className="w-8 h-8 rounded-full flex items-center justify-center text-xs font-semibold text-white flex-shrink-0" style={{ background: "hsl(213,80%,42%)" }}>
+              {userInitials}
             </div>
-            <span className="flex-1">{item.label}</span>
-            {item.id === "notifications" && unreadCount > 0 && active === "notifications" && (
-              <span className="text-xs font-bold px-1.5 py-0.5 rounded" style={{ background: "rgba(255,255,255,0.2)", color: "white" }}>{unreadCount}</span>
-            )}
-          </button>
-        ))}
-      </nav>
-
-      <div className="px-3 py-4 border-t" style={{ borderColor: "hsl(221,25%,20%)" }}>
-        {/* Связанные аккаунты */}
-        {linkedAccounts.length > 0 && (
-          <div className="mb-2 pt-2 border-t" style={{ borderColor: "hsl(221,25%,20%)" }}>
-            <div className="text-xs px-2 mb-1" style={{ color: "hsl(214,25%,38%)" }}>Другие аккаунты</div>
-            {linkedAccounts.map((acc) => (
-              <button key={acc.token} className="w-full flex items-center gap-2 px-2 py-1.5 rounded-md hover:bg-white/5 transition-colors" onClick={() => switchAccount(acc.token, acc.user)}>
-                {acc.user.avatar_url
-                  ? <img src={acc.user.avatar_url} alt="" className="w-6 h-6 rounded-full object-cover flex-shrink-0" />
-                  : <div className="w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold text-white flex-shrink-0" style={{ background: "hsl(213,80%,38%)" }}>{acc.user.full_name.split(" ").map((w) => w[0]).join("").slice(0,2).toUpperCase()}</div>}
-                <span className="text-xs truncate" style={{ color: "hsl(214,25%,60%)" }}>{acc.user.full_name}</span>
-              </button>
-            ))}
+            <div className="flex-1 min-w-0">
+              <div className="text-xs font-medium truncate" style={{ color: "hsl(214,30%,88%)" }}>{currentUser.full_name}</div>
+              <div className="text-xs truncate" style={{ color: "hsl(214,25%,48%)" }}>{currentUser.job_title || "Участник"}</div>
+            </div>
+            <button className="opacity-40 hover:opacity-80 transition-opacity" onClick={handleLogout} title="Выйти">
+              <Icon name="LogOut" size={14} style={{ color: "hsl(214,30%,72%)" }} />
+            </button>
           </div>
-        )}
-        <div className="flex items-center gap-2.5">
-          {currentUser.avatar_url
-            ? <img src={currentUser.avatar_url} alt={userInitials} className="w-8 h-8 rounded-full object-cover flex-shrink-0" />
-            : <div className="w-8 h-8 rounded-full flex items-center justify-center text-xs font-semibold text-white flex-shrink-0" style={{ background: "hsl(213,80%,42%)" }}>{userInitials}</div>}
-          <div className="flex-1 min-w-0">
-            <div className="text-xs font-medium truncate" style={{ color: "hsl(214,30%,88%)" }}>{currentUser.full_name}</div>
-            <div className="text-xs truncate" style={{ color: "hsl(214,25%,48%)" }}>{currentUser.job_title || "Участник"}</div>
-          </div>
-          <button className="opacity-40 hover:opacity-80 transition-opacity" onClick={handleLogout} title="Выйти">
-            <Icon name="LogOut" size={14} style={{ color: "hsl(214,30%,72%)" }} />
-          </button>
         </div>
-      </div>
-    </>
-  );
-
-  return (
-    <div className="flex h-screen overflow-hidden bg-background font-ibm">
-      {/* Desktop sidebar */}
-      <aside className="hidden md:flex w-60 flex-shrink-0 flex-col sidebar-dark">
-        <SidebarContent />
       </aside>
-
-      {/* Mobile overlay menu */}
-      {mobileMenuOpen && (
-        <div className="md:hidden fixed inset-0 z-50 flex">
-          <div className="w-64 flex flex-col sidebar-dark h-full shadow-2xl">
-            <SidebarContent />
-          </div>
-          <div className="flex-1 bg-black/50" onClick={() => setMobileMenuOpen(false)} />
-        </div>
-      )}
 
       <main className="flex-1 overflow-hidden flex flex-col min-w-0">
         {showCreatePost && currentUser && (
-          <CreatePostModal userInitials={userInitials} onClose={() => setShowCreatePost(false)}
-            onCreated={() => { setShowCreatePost(false); setActive("feed"); }} />
+          <CreatePostModal
+            userInitials={userInitials}
+            onClose={() => setShowCreatePost(false)}
+            onCreated={() => { setShowCreatePost(false); setActive("feed"); }}
+          />
         )}
-        <header className="h-12 flex-shrink-0 flex items-center justify-between px-4 border-b bg-card" style={{ borderColor: "hsl(216,20%,88%)" }}>
-          <div className="flex items-center gap-3">
-            {/* Mobile hamburger */}
-            <button className="md:hidden w-8 h-8 flex items-center justify-center rounded-md hover:bg-muted" style={{ color: "hsl(220,15%,50%)" }} onClick={() => setMobileMenuOpen(true)}>
-              <Icon name="Menu" size={18} />
-            </button>
-            <h1 className="font-semibold text-sm">{visibleNav.find((n) => n.id === active)?.label}</h1>
-          </div>
+        <header className="h-12 flex-shrink-0 flex items-center justify-between px-6 border-b bg-card" style={{ borderColor: "hsl(216,20%,88%)" }}>
+          <h1 className="font-semibold text-sm">{navItems.find((n) => n.id === active)?.label}</h1>
           <div className="flex items-center gap-2">
             <button className="btn-primary text-xs px-3 py-1.5 flex items-center gap-1.5" onClick={() => setShowCreatePost(true)}>
-              <Icon name="Plus" size={13} /><span className="hidden sm:inline">Создать пост</span>
+              <Icon name="Plus" size={13} />Создать пост
             </button>
-            <button className="relative w-8 h-8 flex items-center justify-center rounded-md hover:bg-muted transition-colors"
-              style={{ color: "hsl(220,15%,50%)" }} onClick={() => navigate("notifications")}>
+            <button
+              className="relative w-8 h-8 flex items-center justify-center rounded-md hover:bg-muted transition-colors"
+              style={{ color: "hsl(220,15%,50%)" }}
+              onClick={() => { setActive("notifications"); setUnreadCount(0); }}
+            >
               <Icon name="Bell" size={16} />
-              {unreadCount > 0 && <span className="notification-dot">{unreadCount > 9 ? "9+" : unreadCount}</span>}
+              {unreadCount > 0 && (
+                <span className="notification-dot">{unreadCount > 9 ? "9+" : unreadCount}</span>
+              )}
             </button>
           </div>
         </header>
 
-        {/* Mobile bottom nav */}
-        <div className="md:hidden fixed bottom-0 left-0 right-0 z-40 flex border-t bg-card" style={{ borderColor: "hsl(216,20%,88%)" }}>
-          {visibleNav.filter((i) => i.id !== "admin").slice(0, 5).map((item) => (
-            <button key={item.id} onClick={() => navigate(item.id)}
-              className="flex-1 flex flex-col items-center justify-center py-2 gap-0.5 transition-colors"
-              style={{ color: active === item.id ? "hsl(213,80%,40%)" : "hsl(220,15%,55%)" }}>
-              <div className="relative">
-                <Icon name={item.icon} size={18} />
-                {item.id === "notifications" && unreadCount > 0 && (
-                  <span className="notification-dot">{unreadCount > 9 ? "9+" : unreadCount}</span>
-                )}
-              </div>
-              <span style={{ fontSize: "9px" }}>{item.label}</span>
-            </button>
-          ))}
-        </div>
-
-        <div className="flex-1 overflow-y-auto pb-16 md:pb-0">
+        <div className="flex-1 overflow-y-auto">
           <div key={active} className="section-enter h-full">{renderPage()}</div>
         </div>
       </main>

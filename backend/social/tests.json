@@ -1,12 +1,11 @@
 {
   "tests": [
     {
-      "name": "Groups list",
-      "method": "POST",
+      "name": "Search users no auth",
+      "method": "GET",
       "path": "/",
-      "body": {"action": "groups_list"},
       "expectedStatus": 200,
-      "expectedBody": {"groups": []},
+      "expectedBody": {"users": []},
       "bodyMatcher": "partial"
     },
     {
