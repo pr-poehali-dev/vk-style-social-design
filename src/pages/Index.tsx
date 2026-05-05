@@ -77,6 +77,8 @@ interface Post {
   created_at: string;
   author: PostAuthor;
   liked: boolean;
+  media_url?: string;
+  media_type?: string;
 }
 
 function timeAgo(dateStr: string): string {
@@ -93,6 +95,41 @@ interface User {
   full_name: string;
   job_title: string;
   bio: string;
+  avatar_url?: string;
+  social_vk?: string;
+  social_tg?: string;
+  social_linkedin?: string;
+  social_instagram?: string;
+}
+
+interface ChatMessage {
+  id: number;
+  sender_id: number;
+  text: string;
+  media_url: string;
+  media_type: string;
+  created_at: string;
+  sender_name: string;
+  sender_initials: string;
+  sender_avatar: string;
+  is_me: boolean;
+}
+
+interface Conversation {
+  id: number;
+  partner: { id: number; full_name: string; job_title: string; initials: string; avatar_url: string };
+  last_message: string;
+  last_at: string;
+}
+
+// Утилита: чтение файла как base64
+function readFileAsBase64(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result as string);
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
 }
 
 async function apiAuth(action: string, data: Record<string, string>) {
@@ -307,8 +344,18 @@ function getAvatarColor(initials: string) {
   return avatarColors[idx];
 }
 
-function Avatar({ initials, size = "md" }: { initials: string; size?: "sm" | "md" | "lg" }) {
+function Avatar({ initials, avatarUrl, size = "md" }: { initials: string; avatarUrl?: string; size?: "sm" | "md" | "lg" }) {
   const sizes = { sm: "w-8 h-8 text-xs", md: "w-10 h-10 text-sm", lg: "w-16 h-16 text-base" };
+  if (avatarUrl) {
+    return (
+      <img
+        src={avatarUrl}
+        alt={initials}
+        className={`${sizes[size]} rounded-full object-cover flex-shrink-0`}
+        onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }}
+      />
+    );
+  }
   return (
     <div
       className={`${sizes[size]} rounded-full flex items-center justify-center font-semibold text-white flex-shrink-0`}
@@ -324,23 +371,34 @@ function CreatePostModal({ userInitials, onClose, onCreated }: { userInitials: s
   const [tags, setTags] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [mediaPreview, setMediaPreview] = useState<string>("");
+  const [mediaFile, setMediaFile] = useState<File | null>(null);
+  const fileInputRef = { current: null as HTMLInputElement | null };
+
+  const handleMediaSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (file.size > 50 * 1024 * 1024) { setError("Файл не более 50 МБ"); return; }
+    setMediaFile(file);
+    const b64 = await readFileAsBase64(file);
+    setMediaPreview(b64);
+  };
 
   const submit = async () => {
-    if (!text.trim()) { setError("Введите текст поста"); return; }
+    if (!text.trim() && !mediaFile) { setError("Введите текст или добавьте медиа"); return; }
     setLoading(true); setError("");
-    const token = localStorage.getItem("nexus_token") || "";
-    const res = await fetch(POSTS_URL, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "X-Auth-Token": token },
-      body: JSON.stringify({ action: "create", text: text.trim(), tags: tags.trim() }),
-    });
-    const raw = await res.text();
-    let json: Record<string, unknown> = {};
-    try { json = JSON.parse(raw); } catch { /* ignore */ }
-    if (typeof json === "string") { try { json = JSON.parse(json as string); } catch { /* ignore */ } }
+    let media_url = "", media_type = "";
+    if (mediaFile) {
+      const b64 = await readFileAsBase64(mediaFile);
+      const r = await apiPost(SOCIAL_URL, { action: "upload_media", file_data: b64, file_type: mediaFile.type });
+      if (!r.ok) { setError((r.data.error as string) || "Ошибка загрузки файла"); setLoading(false); return; }
+      media_url = r.data.url as string;
+      media_type = r.data.media_type as string;
+    }
+    const r = await apiPost(POSTS_URL, { action: "create", text: text.trim(), tags: tags.trim(), media_url, media_type });
     setLoading(false);
-    if (!res.ok) { setError((json.error as string) || "Ошибка создания поста"); return; }
-    onCreated((json.post as Post));
+    if (!r.ok) { setError((r.data.error as string) || "Ошибка создания поста"); return; }
+    onCreated(r.data.post as Post);
     onClose();
   };
 
@@ -350,6 +408,7 @@ function CreatePostModal({ userInitials, onClose, onCreated }: { userInitials: s
       style={{ background: "rgba(10,15,30,0.7)", backdropFilter: "blur(4px)" }}
       onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
     >
+      <input ref={(el) => { fileInputRef.current = el; }} type="file" accept="image/*,video/*" className="hidden" onChange={handleMediaSelect} />
       <div className="w-full max-w-lg rounded-xl p-6 section-enter" style={{ background: "hsl(0,0%,100%)", border: "1px solid hsl(216,20%,88%)" }}>
         <div className="flex items-center justify-between mb-4">
           <h2 className="font-semibold text-base">Новая публикация</h2>
@@ -361,13 +420,30 @@ function CreatePostModal({ userInitials, onClose, onCreated }: { userInitials: s
           <Avatar initials={userInitials} />
           <textarea
             className="flex-1 px-3 py-2.5 rounded-lg border text-sm outline-none focus:border-blue-400 transition-all resize-none"
-            style={{ borderColor: "hsl(216,20%,85%)", color: "hsl(220,30%,15%)", minHeight: 120 }}
+            style={{ borderColor: "hsl(216,20%,85%)", color: "hsl(220,30%,15%)", minHeight: 100 }}
             placeholder="Поделитесь профессиональными мыслями, новостями или опытом..."
             value={text}
             onChange={(e) => setText(e.target.value)}
             autoFocus
           />
         </div>
+
+        {/* Media preview */}
+        {mediaPreview && (
+          <div className="relative mb-3 rounded-lg overflow-hidden">
+            {mediaFile?.type.startsWith("video/") ? (
+              <video src={mediaPreview} className="w-full max-h-48 object-cover" controls />
+            ) : (
+              <img src={mediaPreview} alt="preview" className="w-full max-h-48 object-cover rounded-lg" />
+            )}
+            <button onClick={() => { setMediaPreview(""); setMediaFile(null); }}
+              className="absolute top-2 right-2 w-7 h-7 rounded-full flex items-center justify-center"
+              style={{ background: "rgba(0,0,0,0.6)", color: "white" }}>
+              <Icon name="X" size={14} />
+            </button>
+          </div>
+        )}
+
         <div className="mb-4">
           <input
             className="w-full px-3.5 py-2 rounded-lg border text-sm outline-none focus:border-blue-400 transition-all"
@@ -381,10 +457,14 @@ function CreatePostModal({ userInitials, onClose, onCreated }: { userInitials: s
           <div className="px-3 py-2 rounded-lg text-sm mb-3" style={{ background: "hsl(0,80%,97%)", color: "hsl(0,72%,40%)", border: "1px solid hsl(0,72%,88%)" }}>{error}</div>
         )}
         <div className="flex justify-between items-center">
-          <span className="text-xs" style={{ color: text.length > 2800 ? "hsl(0,72%,51%)" : "hsl(220,15%,60%)" }}>{text.length} / 3000</span>
+          <div className="flex gap-2">
+            <button onClick={() => fileInputRef.current?.click()} className="btn-outline text-xs px-3 py-1.5 flex items-center gap-1.5">
+              <Icon name="Image" size={13} />Фото/Видео
+            </button>
+          </div>
           <div className="flex gap-2">
             <button onClick={onClose} className="btn-outline text-xs px-4 py-2">Отмена</button>
-            <button onClick={submit} disabled={loading || !text.trim()} className="btn-primary text-xs px-4 py-2" style={{ opacity: loading ? 0.7 : 1 }}>
+            <button onClick={submit} disabled={loading || (!text.trim() && !mediaFile)} className="btn-primary text-xs px-4 py-2" style={{ opacity: loading ? 0.7 : 1 }}>
               {loading ? "Публикация..." : "Опубликовать"}
             </button>
           </div>
@@ -438,7 +518,13 @@ function PostCard({ post, onLike, onCommentAdded, userInitials }: {
           <div className="text-xs mt-0.5" style={{ color: "hsl(220,15%,65%)" }}>{timeAgo(post.created_at)}</div>
         </div>
       </div>
-      <p className="mt-3 text-sm leading-relaxed whitespace-pre-wrap" style={{ color: "hsl(220,25%,20%)" }}>{post.text}</p>
+      {post.text && <p className="mt-3 text-sm leading-relaxed whitespace-pre-wrap" style={{ color: "hsl(220,25%,20%)" }}>{post.text}</p>}
+      {post.media_url && post.media_type === "image" && (
+        <img src={post.media_url} alt="media" className="mt-3 w-full rounded-lg object-cover max-h-80" />
+      )}
+      {post.media_url && post.media_type === "video" && (
+        <video src={post.media_url} controls className="mt-3 w-full rounded-lg max-h-80" />
+      )}
       {post.tags.length > 0 && (
         <div className="flex flex-wrap gap-1.5 mt-3">
           {post.tags.map((tag) => <span key={tag} className="stat-badge">#{tag}</span>)}
@@ -702,7 +788,7 @@ function NotificationsPage() {
   );
 }
 
-function SearchPage() {
+function SearchPage({ onStartChat }: { onStartChat?: (userId: number) => void }) {
   const [query, setQuery] = useState("");
   const [users, setUsers] = useState<SocialUser[]>([]);
   const [loading, setLoading] = useState(true);
@@ -761,12 +847,17 @@ function SearchPage() {
                 <div className="font-medium text-sm">{u.full_name}</div>
                 <div className="text-xs" style={{ color: "hsl(220,15%,55%)" }}>{u.job_title || "Участник сети"}</div>
               </div>
-              <button
-                className={u.is_following ? "btn-outline text-xs px-3 py-1.5" : "btn-primary text-xs px-3 py-1.5"}
-                onClick={() => toggleFollow(u)}
-              >
-                {u.is_following ? "Подписан" : "+ Подписаться"}
-              </button>
+              <div className="flex gap-1.5">
+                <button className="btn-outline text-xs p-2" onClick={() => onStartChat?.(u.id)} title="Написать">
+                  <Icon name="MessageSquare" size={13} />
+                </button>
+                <button
+                  className={u.is_following ? "btn-outline text-xs px-3 py-1.5" : "btn-primary text-xs px-3 py-1.5"}
+                  onClick={() => toggleFollow(u)}
+                >
+                  {u.is_following ? "Подписан" : "+"}
+                </button>
+              </div>
             </div>
           ))}
           {!loading && users.length === 0 && (
@@ -802,92 +893,161 @@ function SearchPage() {
   );
 }
 
-function MessagesPage() {
-  const [activeChat, setActiveChat] = useState<number>(1);
+function MessagesPage({ currentUser }: { currentUser: User | null }) {
+  const [convs, setConvs] = useState<Conversation[]>([]);
+  const [activeConv, setActiveConv] = useState<Conversation | null>(null);
+  const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [newMsg, setNewMsg] = useState("");
+  const [loadingConvs, setLoadingConvs] = useState(true);
+  const [loadingMsgs, setLoadingMsgs] = useState(false);
+  const [sendingMedia, setSendingMedia] = useState(false);
+  const messagesEndRef = { current: null as HTMLDivElement | null };
+  const fileRef = { current: null as HTMLInputElement | null };
+
+  useEffect(() => {
+    apiPost(SOCIAL_URL, { action: "chat_list" }).then((r) => {
+      setConvs((r.data.conversations as Conversation[]) || []);
+      setLoadingConvs(false);
+    });
+  }, []);
+
+  useEffect(() => {
+    if (messagesEndRef.current) messagesEndRef.current.scrollIntoView({ behavior: "smooth" });
+  }, [messages]);
+
+  const openConv = async (conv: Conversation) => {
+    setActiveConv(conv);
+    setLoadingMsgs(true);
+    const r = await apiPost(SOCIAL_URL, { action: "chat_messages", conv_id: conv.id });
+    setMessages((r.data.messages as ChatMessage[]) || []);
+    setLoadingMsgs(false);
+  };
+
+  const sendMessage = async (mediaUrl = "", mediaType = "") => {
+    if (!activeConv) return;
+    if (!newMsg.trim() && !mediaUrl) return;
+    const r = await apiPost(SOCIAL_URL, {
+      action: "chat_send", partner_id: activeConv.partner.id,
+      text: newMsg.trim(), media_url: mediaUrl, media_type: mediaType,
+    });
+    if (r.ok && r.data.message) {
+      setMessages((prev) => [...prev, r.data.message as ChatMessage]);
+      setNewMsg("");
+      setConvs((prev) => prev.map((c) => c.id === activeConv.id
+        ? { ...c, last_message: newMsg.trim() || "📎 Медиафайл", last_at: new Date().toISOString() } : c));
+    }
+  };
+
+  const handleMediaSend = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !activeConv) return;
+    setSendingMedia(true);
+    const b64 = await readFileAsBase64(file);
+    const r = await apiPost(SOCIAL_URL, { action: "upload_media", file_data: b64, file_type: file.type });
+    setSendingMedia(false);
+    if (r.ok) await sendMessage(r.data.url as string, r.data.media_type as string);
+  };
+
+  const myInitials = currentUser ? getInitials(currentUser.full_name) : "?";
 
   return (
     <div className="flex" style={{ height: "calc(100vh - 3rem)" }}>
-      <div className="w-72 flex-shrink-0 border-r overflow-y-auto" style={{ borderColor: "hsl(216,20%,88%)" }}>
-        <div className="px-3 py-3 border-b" style={{ borderColor: "hsl(216,20%,88%)" }}>
+      <input ref={(el) => { fileRef.current = el; }} type="file" accept="image/*,video/*" className="hidden" onChange={handleMediaSend} />
+
+      {/* Conversations list */}
+      <div className="w-72 flex-shrink-0 border-r flex flex-col" style={{ borderColor: "hsl(216,20%,88%)" }}>
+        <div className="px-3 py-3 border-b flex-shrink-0" style={{ borderColor: "hsl(216,20%,88%)" }}>
           <div className="relative">
             <Icon name="Search" size={14} className="absolute left-3 top-1/2 -translate-y-1/2" style={{ color: "hsl(220,15%,60%)" }} />
-            <input className="w-full pl-8 pr-3 py-2 rounded-md border text-xs outline-none bg-card" style={{ borderColor: "hsl(216,20%,87%)", color: "hsl(220,30%,20%)" }} placeholder="Поиск чатов..." />
+            <input className="w-full pl-8 pr-3 py-2 rounded-md border text-xs outline-none bg-card" style={{ borderColor: "hsl(216,20%,87%)", color: "hsl(220,30%,20%)" }} placeholder="Поиск диалогов..." />
           </div>
         </div>
-        {conversations.map((conv) => (
-          <button
-            key={conv.id}
-            className={`w-full px-3 py-3 flex items-center gap-3 text-left transition-colors border-b ${activeChat === conv.id ? "bg-blue-50" : "hover:bg-gray-50"}`}
-            style={{ borderColor: "hsl(216,20%,93%)" }}
-            onClick={() => setActiveChat(conv.id)}
-          >
-            <div className="relative">
-              <Avatar initials={conv.avatar} size="sm" />
-              {conv.online && <span className="absolute bottom-0 right-0 w-2.5 h-2.5 rounded-full border-2 border-card" style={{ background: "hsl(142,70%,42%)" }} />}
+        <div className="flex-1 overflow-y-auto">
+          {loadingConvs && [1,2,3].map((i) => <div key={i} className="h-16 mx-3 my-1 rounded-lg shimmer" />)}
+          {!loadingConvs && convs.length === 0 && (
+            <div className="text-center py-10 px-4" style={{ color: "hsl(220,15%,55%)" }}>
+              <Icon name="MessageSquare" size={28} className="mx-auto mb-2 opacity-30" />
+              <div className="text-xs">Найдите людей в Поиске и начните диалог</div>
             </div>
-            <div className="flex-1 min-w-0">
-              <div className="flex items-center justify-between">
-                <span className="font-medium text-xs">{conv.name}</span>
-                <span className="text-xs" style={{ color: "hsl(220,15%,60%)" }}>{conv.time}</span>
+          )}
+          {convs.map((conv) => (
+            <button key={conv.id}
+              className={`w-full px-3 py-3 flex items-center gap-3 text-left transition-colors border-b ${activeConv?.id === conv.id ? "bg-blue-50" : "hover:bg-gray-50"}`}
+              style={{ borderColor: "hsl(216,20%,93%)" }}
+              onClick={() => openConv(conv)}
+            >
+              <Avatar initials={conv.partner.initials} avatarUrl={conv.partner.avatar_url} size="sm" />
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center justify-between">
+                  <span className="font-medium text-xs">{conv.partner.full_name}</span>
+                  <span className="text-xs" style={{ color: "hsl(220,15%,60%)" }}>{timeAgo(conv.last_at)}</span>
+                </div>
+                <div className="text-xs truncate mt-0.5" style={{ color: "hsl(220,15%,55%)" }}>{conv.last_message}</div>
               </div>
-              <div className="text-xs truncate mt-0.5" style={{ color: "hsl(220,15%,55%)" }}>{conv.last}</div>
-            </div>
-            {conv.unread > 0 && (
-              <span className="w-5 h-5 rounded-full flex items-center justify-center text-white flex-shrink-0 font-bold" style={{ background: "hsl(213,80%,40%)", fontSize: "10px" }}>
-                {conv.unread}
-              </span>
-            )}
-          </button>
-        ))}
+            </button>
+          ))}
+        </div>
       </div>
 
-      <div className="flex-1 flex flex-col min-w-0">
-        {(() => {
-          const conv = conversations.find((c) => c.id === activeChat)!;
-          return (
-            <>
-              <div className="px-5 py-3 border-b flex items-center gap-3 bg-card flex-shrink-0" style={{ borderColor: "hsl(216,20%,88%)" }}>
-                <div className="relative">
-                  <Avatar initials={conv.avatar} size="sm" />
-                  {conv.online && <span className="absolute bottom-0 right-0 w-2.5 h-2.5 rounded-full border-2 border-card" style={{ background: "hsl(142,70%,42%)" }} />}
-                </div>
-                <div>
-                  <div className="font-semibold text-sm">{conv.name}</div>
-                  <div className="text-xs" style={{ color: conv.online ? "hsl(142,70%,38%)" : "hsl(220,15%,55%)" }}>{conv.online ? "В сети" : "Не в сети"}</div>
-                </div>
-                <div className="ml-auto flex items-center gap-2">
-                  <button className="btn-outline p-2"><Icon name="Phone" size={13} /></button>
-                  <button className="btn-outline p-2"><Icon name="Video" size={13} /></button>
-                </div>
-              </div>
+      {/* Chat window */}
+      {activeConv ? (
+        <div className="flex-1 flex flex-col min-w-0">
+          <div className="px-5 py-3 border-b flex items-center gap-3 bg-card flex-shrink-0" style={{ borderColor: "hsl(216,20%,88%)" }}>
+            <Avatar initials={activeConv.partner.initials} avatarUrl={activeConv.partner.avatar_url} size="sm" />
+            <div>
+              <div className="font-semibold text-sm">{activeConv.partner.full_name}</div>
+              <div className="text-xs" style={{ color: "hsl(220,15%,55%)" }}>{activeConv.partner.job_title}</div>
+            </div>
+          </div>
 
-              <div className="flex-1 overflow-y-auto px-5 py-4 space-y-3" style={{ background: "hsl(216,20%,97%)" }}>
-                {chatMessages.map((msg) => (
-                  <div key={msg.id} className={`flex ${msg.me ? "justify-end" : "justify-start"}`}>
-                    <div className={`max-w-sm px-4 py-2.5 text-sm ${msg.me ? "message-bubble-me" : "message-bubble-other"}`}>
-                      <p>{msg.text}</p>
-                      <div className="text-xs mt-1 text-right" style={{ color: msg.me ? "rgba(255,255,255,0.6)" : "hsl(220,15%,60%)" }}>{msg.time}</div>
-                    </div>
-                  </div>
-                ))}
+          <div className="flex-1 overflow-y-auto px-5 py-4 space-y-3" style={{ background: "hsl(216,20%,97%)" }}>
+            {loadingMsgs && <div className="text-center text-xs" style={{ color: "hsl(220,15%,60%)" }}>Загрузка...</div>}
+            {messages.map((msg) => (
+              <div key={msg.id} className={`flex items-end gap-2 ${msg.is_me ? "justify-end" : "justify-start"}`}>
+                {!msg.is_me && <Avatar initials={msg.sender_initials} avatarUrl={msg.sender_avatar} size="sm" />}
+                <div className={`max-w-sm ${msg.is_me ? "message-bubble-me" : "message-bubble-other"}`}>
+                  {msg.media_url && msg.media_type === "image" && (
+                    <img src={msg.media_url} alt="media" className="rounded-lg max-w-full max-h-48 object-cover mb-1" />
+                  )}
+                  {msg.media_url && msg.media_type === "video" && (
+                    <video src={msg.media_url} controls className="rounded-lg max-w-full max-h-48 mb-1" />
+                  )}
+                  {msg.text && <p className="px-4 py-2.5 text-sm">{msg.text}</p>}
+                  {!msg.text && msg.media_url && <div className="px-4 pb-1" />}
+                  <div className="text-xs px-4 pb-2 text-right" style={{ color: msg.is_me ? "rgba(255,255,255,0.6)" : "hsl(220,15%,60%)" }}>{timeAgo(msg.created_at)}</div>
+                </div>
+                {msg.is_me && <Avatar initials={myInitials} avatarUrl={currentUser?.avatar_url} size="sm" />}
               </div>
+            ))}
+            <div ref={(el) => { messagesEndRef.current = el; }} />
+          </div>
 
-              <div className="px-4 py-3 border-t bg-card flex items-center gap-2 flex-shrink-0" style={{ borderColor: "hsl(216,20%,88%)" }}>
-                <button className="btn-outline p-2"><Icon name="Paperclip" size={15} /></button>
-                <input
-                  className="flex-1 px-4 py-2 rounded-full border text-sm outline-none focus:border-blue-400"
-                  style={{ borderColor: "hsl(216,20%,85%)", color: "hsl(220,30%,15%)" }}
-                  placeholder="Написать сообщение..."
-                  value={newMsg}
-                  onChange={(e) => setNewMsg(e.target.value)}
-                />
-                <button className="btn-primary px-4 py-2 rounded-full"><Icon name="Send" size={15} /></button>
-              </div>
-            </>
-          );
-        })()}
-      </div>
+          <div className="px-4 py-3 border-t bg-card flex items-center gap-2 flex-shrink-0" style={{ borderColor: "hsl(216,20%,88%)" }}>
+            <button className="btn-outline p-2" onClick={() => fileRef.current?.click()} disabled={sendingMedia} title="Прикрепить файл">
+              {sendingMedia ? <Icon name="Loader" size={15} className="animate-spin" /> : <Icon name="Paperclip" size={15} />}
+            </button>
+            <input
+              className="flex-1 px-4 py-2 rounded-full border text-sm outline-none focus:border-blue-400"
+              style={{ borderColor: "hsl(216,20%,85%)", color: "hsl(220,30%,15%)" }}
+              placeholder="Написать сообщение..."
+              value={newMsg}
+              onChange={(e) => setNewMsg(e.target.value)}
+              onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendMessage(); } }}
+            />
+            <button className="btn-primary px-4 py-2 rounded-full" onClick={() => sendMessage()} disabled={!newMsg.trim()}>
+              <Icon name="Send" size={15} />
+            </button>
+          </div>
+        </div>
+      ) : (
+        <div className="flex-1 flex items-center justify-center" style={{ color: "hsl(220,15%,60%)" }}>
+          <div className="text-center">
+            <Icon name="MessageSquare" size={40} className="mx-auto mb-3 opacity-30" />
+            <div className="text-sm font-medium mb-1">Выберите диалог</div>
+            <div className="text-xs">Или найдите человека через Поиск</div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -904,29 +1064,33 @@ function EditProfileModal({
   const [fullName, setFullName] = useState(user.full_name);
   const [jobTitle, setJobTitle] = useState(user.job_title);
   const [bio, setBio] = useState(user.bio);
+  const [socialVk, setSocialVk] = useState(user.social_vk || "");
+  const [socialTg, setSocialTg] = useState(user.social_tg || "");
+  const [socialLi, setSocialLi] = useState(user.social_linkedin || "");
+  const [socialIg, setSocialIg] = useState(user.social_instagram || "");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
   const handleSave = async () => {
     if (!fullName.trim()) { setError("Имя не может быть пустым"); return; }
-    setLoading(true);
-    setError("");
+    setLoading(true); setError("");
     const token = localStorage.getItem("nexus_token") || "";
-    const res = await fetch(AUTH_URL, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "X-Auth-Token": token },
-      body: JSON.stringify({ action: "update_profile", full_name: fullName.trim(), job_title: jobTitle.trim(), bio: bio.trim() }),
-    });
-    const text = await res.text();
+    const [r1, r2] = await Promise.all([
+      fetch(AUTH_URL, { method: "POST", headers: { "Content-Type": "application/json", "X-Auth-Token": token },
+        body: JSON.stringify({ action: "update_profile", full_name: fullName.trim(), job_title: jobTitle.trim(), bio: bio.trim() }) }),
+      apiPost(SOCIAL_URL, { action: "update_socials", social_vk: socialVk.trim(), social_tg: socialTg.trim(),
+        social_linkedin: socialLi.trim(), social_instagram: socialIg.trim() }),
+    ]);
+    const text = await r1.text();
     let json: Record<string, unknown> = {};
     try { json = JSON.parse(text); } catch { /* ignore */ }
     if (typeof json === "string") { try { json = JSON.parse(json as string); } catch { /* ignore */ } }
     setLoading(false);
-    if (!res.ok) { setError((json.error as string) || "Ошибка сохранения"); return; }
-    const updated = json as unknown as User;
+    if (!r1.ok) { setError((json.error as string) || "Ошибка сохранения"); return; }
+    const updated = { ...(json as unknown as User), social_vk: socialVk, social_tg: socialTg, social_linkedin: socialLi, social_instagram: socialIg };
     localStorage.setItem("nexus_user", JSON.stringify(updated));
     onSave(updated);
-    onClose();
+    if (r2.ok) onClose();
   };
 
   return (
@@ -978,11 +1142,31 @@ function EditProfileModal({
             <textarea
               className="w-full px-3.5 py-2.5 rounded-lg border text-sm outline-none focus:border-blue-400 transition-all resize-none"
               style={{ borderColor: "hsl(216,20%,85%)", color: "hsl(220,30%,15%)" }}
-              rows={4}
+              rows={3}
               value={bio}
               onChange={(e) => setBio(e.target.value)}
               placeholder="Расскажите о своём опыте и специализации..."
             />
+          </div>
+
+          <div>
+            <label className="block text-xs font-medium mb-2" style={{ color: "hsl(220,15%,45%)" }}>Социальные сети</label>
+            <div className="space-y-2">
+              {[
+                { label: "ВКонтакте (username)", val: socialVk, set: setSocialVk, ph: "username" },
+                { label: "Telegram (username)", val: socialTg, set: setSocialTg, ph: "username" },
+                { label: "LinkedIn (username)", val: socialLi, set: setSocialLi, ph: "username" },
+                { label: "Instagram (username)", val: socialIg, set: setSocialIg, ph: "username" },
+              ].map((s) => (
+                <input key={s.label}
+                  className="w-full px-3.5 py-2 rounded-lg border text-sm outline-none focus:border-blue-400 transition-all"
+                  style={{ borderColor: "hsl(216,20%,85%)", color: "hsl(220,30%,15%)" }}
+                  placeholder={`${s.label}`}
+                  value={s.val}
+                  onChange={(e) => s.set(e.target.value.replace(/^@/, ""))}
+                />
+              ))}
+            </div>
           </div>
 
           {error && (
@@ -1015,19 +1199,43 @@ function EditProfileModal({
 
 function ProfilePage({ user, onUserUpdate }: { user?: User; onUserUpdate?: (u: User) => void }) {
   const [editOpen, setEditOpen] = useState(false);
+  const [uploadingAvatar, setUploadingAvatar] = useState(false);
+  const avatarInputRef = { current: null as HTMLInputElement | null };
+
   const displayName = user?.full_name || "Пользователь";
   const displayTitle = user?.job_title || "Участник сети";
   const displayBio = user?.bio || "";
   const displayInitials = getInitials(displayName);
   const stats = [
-    { label: "Подписчиков", value: "1 284" },
-    { label: "Подписок", value: "347" },
-    { label: "Постов", value: "89" },
-    { label: "Просмотров", value: "48.2K" },
+    { label: "Подписчиков", value: "—" },
+    { label: "Подписок", value: "—" },
+    { label: "Постов", value: "—" },
+    { label: "Просмотров", value: "—" },
   ];
+
+  const handleAvatarUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setUploadingAvatar(true);
+    const b64 = await readFileAsBase64(file);
+    const r = await apiPost(SOCIAL_URL, { action: "update_avatar", file_data: b64, file_type: file.type });
+    setUploadingAvatar(false);
+    if (r.ok && r.data.avatar_url) {
+      onUserUpdate?.({ ...user!, avatar_url: r.data.avatar_url as string });
+      localStorage.setItem("nexus_user", JSON.stringify({ ...user, avatar_url: r.data.avatar_url }));
+    }
+  };
+
+  const socials = [
+    { key: "social_vk", label: "ВКонтакте", icon: "Globe", color: "hsl(213,90%,50%)", prefix: "https://vk.com/", value: user?.social_vk },
+    { key: "social_tg", label: "Telegram", icon: "Send", color: "hsl(200,90%,45%)", prefix: "https://t.me/", value: user?.social_tg },
+    { key: "social_linkedin", label: "LinkedIn", icon: "Briefcase", color: "hsl(210,90%,40%)", prefix: "https://linkedin.com/in/", value: user?.social_linkedin },
+    { key: "social_instagram", label: "Instagram", icon: "Camera", color: "hsl(320,80%,55%)", prefix: "https://instagram.com/", value: user?.social_instagram },
+  ].filter((s) => s.value);
 
   return (
     <>
+      <input ref={(el) => { avatarInputRef.current = el; }} type="file" accept="image/*" className="hidden" onChange={handleAvatarUpload} />
       {editOpen && user && (
         <EditProfileModal
           user={user}
@@ -1042,15 +1250,40 @@ function ProfilePage({ user, onUserUpdate }: { user?: User; onUserUpdate?: (u: U
           style={{ background: "linear-gradient(135deg, hsl(221,55%,20%) 0%, hsl(213,80%,35%) 100%)" }}
         />
         <div className="flex items-end gap-4 -mt-10 mb-4">
-          <div
-            className="w-16 h-16 rounded-full border-4 border-card flex items-center justify-center text-base font-bold text-white flex-shrink-0"
-            style={{ background: "hsl(213,80%,40%)" }}
-          >
-            {displayInitials}
+          {/* Avatar with upload */}
+          <div className="relative flex-shrink-0 group" onClick={() => avatarInputRef.current?.click()} style={{ cursor: "pointer" }}>
+            {user?.avatar_url ? (
+              <img src={user.avatar_url} alt={displayInitials}
+                className="w-16 h-16 rounded-full border-4 border-card object-cover"
+                style={{ background: "hsl(213,80%,40%)" }} />
+            ) : (
+              <div className="w-16 h-16 rounded-full border-4 border-card flex items-center justify-center text-base font-bold text-white"
+                style={{ background: "hsl(213,80%,40%)" }}>
+                {displayInitials}
+              </div>
+            )}
+            <div className="absolute inset-0 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
+              style={{ background: "rgba(0,0,0,0.45)" }}>
+              {uploadingAvatar
+                ? <Icon name="Loader" size={18} style={{ color: "white" }} className="animate-spin" />
+                : <Icon name="Camera" size={18} style={{ color: "white" }} />}
+            </div>
           </div>
+
           <div className="pb-1 flex-1">
             <h1 className="font-bold text-lg">{displayName}</h1>
             <p className="text-sm" style={{ color: "hsl(220,15%,50%)" }}>{displayTitle}</p>
+            {socials.length > 0 && (
+              <div className="flex items-center gap-2 mt-2 flex-wrap">
+                {socials.map((s) => (
+                  <a key={s.key} href={`${s.prefix}${s.value}`} target="_blank" rel="noopener noreferrer"
+                    className="flex items-center gap-1 text-xs px-2 py-0.5 rounded-full transition-opacity hover:opacity-75"
+                    style={{ background: `${s.color}15`, color: s.color, border: `1px solid ${s.color}30` }}>
+                    <Icon name={s.icon} size={11} />{s.label}
+                  </a>
+                ))}
+              </div>
+            )}
           </div>
           <div className="pb-1 flex gap-2">
             <button className="btn-primary text-xs px-4 py-2" onClick={() => setEditOpen(true)}>Редактировать</button>
@@ -1061,11 +1294,7 @@ function ProfilePage({ user, onUserUpdate }: { user?: User; onUserUpdate?: (u: U
         {displayBio ? (
           <p className="text-sm leading-relaxed mb-4" style={{ color: "hsl(220,25%,25%)" }}>{displayBio}</p>
         ) : (
-          <p
-            className="text-sm leading-relaxed mb-4 italic cursor-pointer hover:underline"
-            style={{ color: "hsl(220,15%,65%)" }}
-            onClick={() => setEditOpen(true)}
-          >
+          <p className="text-sm leading-relaxed mb-4 italic cursor-pointer hover:underline" style={{ color: "hsl(220,15%,65%)" }} onClick={() => setEditOpen(true)}>
             Добавьте информацию о себе...
           </p>
         )}
@@ -1174,8 +1403,11 @@ export default function Index() {
       case "feed": return <FeedPage currentUser={currentUser} />;
       case "friends": return <FriendsPage />;
       case "notifications": return <NotificationsPage />;
-      case "search": return <SearchPage />;
-      case "messages": return <MessagesPage />;
+      case "search": return <SearchPage onStartChat={async (uid) => {
+        const r = await apiPost(SOCIAL_URL, { action: "chat_start", partner_id: uid });
+        if (r.ok) setActive("messages");
+      }} />;
+      case "messages": return <MessagesPage currentUser={currentUser} />;
       case "profile": return <ProfilePage user={currentUser} onUserUpdate={(u) => { setCurrentUser(u); }} />;
     }
   };
@@ -1220,9 +1452,13 @@ export default function Index() {
 
         <div className="px-3 py-4 border-t" style={{ borderColor: "hsl(221,25%,20%)" }}>
           <div className="flex items-center gap-2.5">
-            <div className="w-8 h-8 rounded-full flex items-center justify-center text-xs font-semibold text-white flex-shrink-0" style={{ background: "hsl(213,80%,42%)" }}>
-              {userInitials}
-            </div>
+            {currentUser.avatar_url ? (
+              <img src={currentUser.avatar_url} alt={userInitials} className="w-8 h-8 rounded-full object-cover flex-shrink-0" />
+            ) : (
+              <div className="w-8 h-8 rounded-full flex items-center justify-center text-xs font-semibold text-white flex-shrink-0" style={{ background: "hsl(213,80%,42%)" }}>
+                {userInitials}
+              </div>
+            )}
             <div className="flex-1 min-w-0">
               <div className="text-xs font-medium truncate" style={{ color: "hsl(214,30%,88%)" }}>{currentUser.full_name}</div>
               <div className="text-xs truncate" style={{ color: "hsl(214,25%,48%)" }}>{currentUser.job_title || "Участник"}</div>
