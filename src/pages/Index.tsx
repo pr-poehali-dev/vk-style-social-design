@@ -107,6 +107,7 @@ interface User {
   job_title: string;
   bio: string;
   avatar_url?: string;
+  cover_url?: string;
   social_vk?: string;
   social_tg?: string;
   social_linkedin?: string;
@@ -159,134 +160,141 @@ async function apiAuth(action: string, data: Record<string, string>) {
 }
 
 function AuthScreen({ onAuth }: { onAuth: (user: User, token: string) => void }) {
-  const [mode, setMode] = useState<"login" | "register">("login");
+  const [mode, setMode] = useState<"login" | "register" | "reset" | "reset_confirm">("login");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [fullName, setFullName] = useState("");
   const [jobTitle, setJobTitle] = useState("");
+  const [resetCode, setResetCode] = useState("");
+  const [newPassword, setNewPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [success, setSuccess] = useState("");
+
+  const inp = "w-full px-3.5 py-2.5 rounded-lg text-sm outline-none transition-all";
+  const inpStyle = { background: "hsl(221,35%,10%)", border: "1px solid hsl(221,25%,25%)", color: "hsl(214,30%,90%)" };
+  const lbl = "block text-xs font-medium mb-1.5";
+  const lblStyle = { color: "hsl(214,25%,65%)" };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setError("");
+    setError(""); setSuccess("");
     setLoading(true);
-    const result = await apiAuth(mode, { email, password, full_name: fullName, job_title: jobTitle });
-    setLoading(false);
-    if (!result.ok) {
-      setError(result.data?.error || "Произошла ошибка");
+
+    if (mode === "reset") {
+      const r = await apiAuth("reset_password_request", { email });
+      setLoading(false);
+      if (!r.ok) { setError(r.data?.error as string || "Ошибка"); return; }
+      setSuccess(`Код отправлен. Ваш код: ${r.data?.code}`);
+      setMode("reset_confirm");
       return;
     }
-    const token = result.data?.token;
-    const user = result.data?.user;
+
+    if (mode === "reset_confirm") {
+      const r = await apiAuth("reset_password_confirm", { email, code: resetCode, new_password: newPassword });
+      setLoading(false);
+      if (!r.ok) { setError(r.data?.error as string || "Неверный код"); return; }
+      const token = r.data?.token; const user = r.data?.user;
+      if (token && user) { localStorage.setItem("nexus_token", token as string); localStorage.setItem("nexus_user", JSON.stringify(user)); onAuth(user as User, token as string); }
+      return;
+    }
+
+    const result = await apiAuth(mode, { email, password, full_name: fullName, job_title: jobTitle });
+    setLoading(false);
+    if (!result.ok) { setError(result.data?.error as string || "Произошла ошибка"); return; }
+    const token = result.data?.token; const user = result.data?.user;
     if (token && user) {
-      localStorage.setItem("nexus_token", token);
+      localStorage.setItem("nexus_token", token as string);
       localStorage.setItem("nexus_user", JSON.stringify(user));
-      onAuth(user, token);
+      onAuth(user as User, token as string);
     }
   };
 
+  const tabLabel: Record<string, string> = { login: "Вход", register: "Регистрация", reset: "Забыли пароль?", reset_confirm: "Новый пароль" };
+  const btnLabel: Record<string, string> = { login: "Войти", register: "Создать аккаунт", reset: "Получить код", reset_confirm: "Сохранить пароль" };
+
   return (
-    <div className="min-h-screen flex items-center justify-center" style={{ background: "hsl(221,35%,12%)" }}>
-      <div className="w-full max-w-md px-4">
+    <div className="min-h-screen flex items-center justify-center p-4" style={{ background: "hsl(221,35%,12%)" }}>
+      <div className="w-full max-w-md">
         <div className="text-center mb-8">
           <div className="inline-flex items-center justify-center w-12 h-12 rounded-lg mb-4" style={{ background: "hsl(213,80%,42%)" }}>
-            <span className="text-white font-bold text-lg font-mono-ibm">N</span>
+            <span className="text-white font-bold text-lg">N</span>
           </div>
           <h1 className="text-white font-semibold tracking-widest text-xl">NEXUS</h1>
           <p className="text-sm mt-1" style={{ color: "hsl(214,25%,55%)" }}>Деловая профессиональная сеть</p>
         </div>
 
-        <div className="rounded-xl p-8" style={{ background: "hsl(221,30%,16%)", border: "1px solid hsl(221,25%,22%)" }}>
-          <div className="flex rounded-lg mb-6 p-1" style={{ background: "hsl(221,35%,10%)" }}>
-            {(["login", "register"] as const).map((m) => (
-              <button
-                key={m}
-                onClick={() => { setMode(m); setError(""); }}
-                className="flex-1 py-2 rounded-md text-sm font-medium transition-all"
-                style={mode === m
-                  ? { background: "hsl(213,80%,40%)", color: "white" }
-                  : { color: "hsl(214,25%,55%)" }
-                }
-              >
-                {m === "login" ? "Вход" : "Регистрация"}
+        <div className="rounded-xl p-6 md:p-8" style={{ background: "hsl(221,30%,16%)", border: "1px solid hsl(221,25%,22%)" }}>
+          {mode !== "reset_confirm" && (
+            <div className="flex rounded-lg mb-6 p-1" style={{ background: "hsl(221,35%,10%)" }}>
+              {(["login", "register"] as const).map((m) => (
+                <button key={m} onClick={() => { setMode(m); setError(""); setSuccess(""); }}
+                  className="flex-1 py-2 rounded-md text-sm font-medium transition-all"
+                  style={mode === m ? { background: "hsl(213,80%,40%)", color: "white" } : { color: "hsl(214,25%,55%)" }}>
+                  {m === "login" ? "Вход" : "Регистрация"}
+                </button>
+              ))}
+            </div>
+          )}
+
+          {(mode === "reset" || mode === "reset_confirm") && (
+            <div className="flex items-center gap-2 mb-5">
+              <button onClick={() => { setMode("login"); setError(""); setSuccess(""); }} style={{ color: "hsl(214,25%,55%)" }}>
+                <Icon name="ArrowLeft" size={16} />
               </button>
-            ))}
-          </div>
+              <h3 className="font-semibold text-sm text-white">{tabLabel[mode]}</h3>
+            </div>
+          )}
 
           <form onSubmit={handleSubmit} className="space-y-4">
             {mode === "register" && (
               <>
-                <div>
-                  <label className="block text-xs font-medium mb-1.5" style={{ color: "hsl(214,25%,65%)" }}>Имя и фамилия *</label>
-                  <input
-                    className="w-full px-3.5 py-2.5 rounded-lg text-sm outline-none transition-all"
-                    style={{ background: "hsl(221,35%,10%)", border: "1px solid hsl(221,25%,25%)", color: "hsl(214,30%,90%)" }}
-                    placeholder="Андрей Козлов"
-                    value={fullName}
-                    onChange={(e) => setFullName(e.target.value)}
-                    required
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-medium mb-1.5" style={{ color: "hsl(214,25%,65%)" }}>Должность</label>
-                  <input
-                    className="w-full px-3.5 py-2.5 rounded-lg text-sm outline-none transition-all"
-                    style={{ background: "hsl(221,35%,10%)", border: "1px solid hsl(221,25%,25%)", color: "hsl(214,30%,90%)" }}
-                    placeholder="Директор по развитию"
-                    value={jobTitle}
-                    onChange={(e) => setJobTitle(e.target.value)}
-                  />
-                </div>
+                <div><label className={lbl} style={lblStyle}>Имя и фамилия *</label>
+                  <input className={inp} style={inpStyle} placeholder="Андрей Козлов" value={fullName} onChange={(e) => setFullName(e.target.value)} required /></div>
+                <div><label className={lbl} style={lblStyle}>Должность</label>
+                  <input className={inp} style={inpStyle} placeholder="Директор по развитию" value={jobTitle} onChange={(e) => setJobTitle(e.target.value)} /></div>
               </>
             )}
 
-            <div>
-              <label className="block text-xs font-medium mb-1.5" style={{ color: "hsl(214,25%,65%)" }}>Email *</label>
-              <input
-                type="email"
-                className="w-full px-3.5 py-2.5 rounded-lg text-sm outline-none transition-all"
-                style={{ background: "hsl(221,35%,10%)", border: "1px solid hsl(221,25%,25%)", color: "hsl(214,30%,90%)" }}
-                placeholder="email@company.ru"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                required
-              />
-            </div>
+            {(mode === "login" || mode === "register" || mode === "reset" || mode === "reset_confirm") && (
+              <div><label className={lbl} style={lblStyle}>Email *</label>
+                <input type="email" className={inp} style={inpStyle} placeholder="email@company.ru" value={email} onChange={(e) => setEmail(e.target.value)} required disabled={mode === "reset_confirm"} /></div>
+            )}
 
-            <div>
-              <label className="block text-xs font-medium mb-1.5" style={{ color: "hsl(214,25%,65%)" }}>Пароль *</label>
-              <input
-                type="password"
-                className="w-full px-3.5 py-2.5 rounded-lg text-sm outline-none transition-all"
-                style={{ background: "hsl(221,35%,10%)", border: "1px solid hsl(221,25%,25%)", color: "hsl(214,30%,90%)" }}
-                placeholder={mode === "register" ? "Минимум 6 символов" : "Введите пароль"}
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                required
-              />
-            </div>
-
-            {error && (
-              <div className="px-3.5 py-2.5 rounded-lg text-sm" style={{ background: "hsl(0,60%,18%)", color: "hsl(0,80%,75%)", border: "1px solid hsl(0,60%,28%)" }}>
-                {error}
+            {(mode === "login" || mode === "register") && (
+              <div>
+                <label className={lbl} style={lblStyle}>Пароль *</label>
+                <input type="password" className={inp} style={inpStyle} placeholder={mode === "register" ? "Минимум 6 символов" : "Введите пароль"} value={password} onChange={(e) => setPassword(e.target.value)} required />
               </div>
             )}
 
-            <button
-              type="submit"
-              disabled={loading}
-              className="w-full py-2.5 rounded-lg text-sm font-semibold transition-all mt-2"
-              style={{ background: loading ? "hsl(213,60%,32%)" : "hsl(213,80%,40%)", color: "white", cursor: loading ? "not-allowed" : "pointer" }}
-            >
-              {loading ? "Подождите..." : mode === "login" ? "Войти" : "Создать аккаунт"}
+            {mode === "reset_confirm" && (
+              <>
+                <div><label className={lbl} style={lblStyle}>Код из письма</label>
+                  <input className={inp} style={inpStyle} placeholder="ABC123" value={resetCode} onChange={(e) => setResetCode(e.target.value.toUpperCase())} required maxLength={6} /></div>
+                <div><label className={lbl} style={lblStyle}>Новый пароль *</label>
+                  <input type="password" className={inp} style={inpStyle} placeholder="Минимум 6 символов" value={newPassword} onChange={(e) => setNewPassword(e.target.value)} required /></div>
+              </>
+            )}
+
+            {error && <div className="px-3.5 py-2.5 rounded-lg text-sm" style={{ background: "hsl(0,60%,18%)", color: "hsl(0,80%,75%)", border: "1px solid hsl(0,60%,28%)" }}>{error}</div>}
+            {success && <div className="px-3.5 py-2.5 rounded-lg text-sm" style={{ background: "hsl(142,50%,18%)", color: "hsl(142,80%,70%)", border: "1px solid hsl(142,50%,28%)" }}>{success}</div>}
+
+            <button type="submit" disabled={loading} className="w-full py-2.5 rounded-lg text-sm font-semibold transition-all mt-2"
+              style={{ background: loading ? "hsl(213,60%,32%)" : "hsl(213,80%,40%)", color: "white", cursor: loading ? "not-allowed" : "pointer" }}>
+              {loading ? "Подождите..." : btnLabel[mode]}
             </button>
+
+            {mode === "login" && (
+              <button type="button" className="w-full text-xs py-1 transition-opacity hover:opacity-80" style={{ color: "hsl(214,25%,50%)" }}
+                onClick={() => { setMode("reset"); setError(""); setSuccess(""); }}>
+                Забыли пароль?
+              </button>
+            )}
           </form>
         </div>
 
-        <p className="text-center text-xs mt-4" style={{ color: "hsl(214,25%,40%)" }}>
-          Nexus © 2026 · Деловая профессиональная сеть
-        </p>
+        <p className="text-center text-xs mt-4" style={{ color: "hsl(214,25%,40%)" }}>Nexus © 2026 · Деловая профессиональная сеть</p>
       </div>
     </div>
   );
@@ -588,6 +596,217 @@ function UsersListModal({ title, users, onClose, onFollowToggle }: {
   );
 }
 
+// ─── UserProfilePage (просмотр профиля другого пользователя) ─────────────────
+interface PublicUser {
+  id: number; full_name: string; job_title: string; bio: string;
+  avatar_url: string; cover_url: string;
+  social_vk: string; social_tg: string; social_linkedin: string; social_instagram: string;
+  stats: { followers: number; following: number; posts: number; views: number; reach: number };
+  is_following: boolean; is_me: boolean;
+}
+
+function UserProfilePage({ userId, currentUser, onBack, onOpenChat }: {
+  userId: number;
+  currentUser: User | null;
+  onBack: () => void;
+  onOpenChat?: (uid: number) => void;
+}) {
+  const [profile, setProfile] = useState<PublicUser | null>(null);
+  const [posts, setPosts] = useState<Post[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [following, setFollowing] = useState(false);
+  const [followersCount, setFollowersCount] = useState(0);
+  const [mediaViewer, setMediaViewer] = useState<{ url: string; type: string } | null>(null);
+  const [followersModal, setFollowersModal] = useState<"followers" | "following" | null>(null);
+  const [followUsers, setFollowUsers] = useState<{ id: number; full_name: string; job_title: string; avatar_url: string; initials: string; is_following: boolean }[]>([]);
+
+  useEffect(() => {
+    setLoading(true);
+    Promise.all([
+      apiPost(SOCIAL_URL, { action: "get_profile_by_id", user_id: userId }),
+      apiPost(POSTS_URL, { action: "user_posts", user_id: userId }),
+    ]).then(([pr, postsR]) => {
+      if (pr.ok) {
+        const p = pr.data as unknown as PublicUser;
+        setProfile(p);
+        setFollowing(p.is_following);
+        setFollowersCount(p.stats.followers);
+      }
+      setPosts((postsR.data.posts as Post[]) || []);
+      setLoading(false);
+    });
+  }, [userId]);
+
+  const handleFollow = async () => {
+    if (!currentUser) return;
+    const action = following ? "unfollow" : "follow";
+    const r = await apiPost(SOCIAL_URL, { action, user_id: userId });
+    if (r.ok) {
+      setFollowing(!following);
+      setFollowersCount(r.data.followers_count as number ?? followersCount + (following ? -1 : 1));
+    }
+  };
+
+  const openFollowModal = async (type: "followers" | "following") => {
+    setFollowersModal(type);
+    setFollowUsers([]);
+    const action = type === "followers" ? "get_followers" : "get_following";
+    const r = await apiPost(POSTS_URL, { action, user_id: userId });
+    setFollowUsers((r.data.users as typeof followUsers) || []);
+  };
+
+  const [postView, setPostView] = useState<"grid" | "list">("grid");
+  const mediaOnly = posts.filter((p) => p.media_url);
+
+  if (loading) return <div className="max-w-3xl mx-auto px-4 py-10"><div className="h-48 rounded-xl shimmer" /></div>;
+  if (!profile) return <div className="text-center py-20 text-sm" style={{ color: "hsl(220,15%,55%)" }}>Профиль не найден</div>;
+
+  const socials = [
+    { key: "vk", label: "ВКонтакте", icon: "Globe", color: "hsl(213,90%,50%)", href: `https://vk.com/${profile.social_vk}`, value: profile.social_vk },
+    { key: "tg", label: "Telegram", icon: "Send", color: "hsl(200,90%,45%)", href: `https://t.me/${profile.social_tg}`, value: profile.social_tg },
+    { key: "li", label: "LinkedIn", icon: "Briefcase", color: "hsl(210,90%,40%)", href: `https://linkedin.com/in/${profile.social_linkedin}`, value: profile.social_linkedin },
+    { key: "ig", label: "Instagram", icon: "Camera", color: "hsl(320,80%,55%)", href: `https://instagram.com/${profile.social_instagram}`, value: profile.social_instagram },
+  ].filter((s) => s.value);
+
+  const displayInitials = profile.full_name.split(" ").map((w) => w[0]).filter(Boolean).join("").slice(0, 2).toUpperCase();
+
+  return (
+    <div className="max-w-3xl mx-auto px-4 py-5">
+      {mediaViewer && <MediaViewer url={mediaViewer.url} type={mediaViewer.type} onClose={() => setMediaViewer(null)} />}
+      {followersModal && (
+        <UsersListModal title={followersModal === "followers" ? "Подписчики" : "Подписки"} users={followUsers}
+          onClose={() => setFollowersModal(null)}
+          onFollowToggle={(uid, f) => setFollowUsers((prev) => prev.map((u) => u.id === uid ? { ...u, is_following: f } : u))} />
+      )}
+
+      <button className="flex items-center gap-2 text-sm mb-4" style={{ color: "hsl(213,80%,40%)" }} onClick={onBack}>
+        <Icon name="ArrowLeft" size={16} />Назад
+      </button>
+
+      <div className="post-card mb-4 overflow-hidden p-0">
+        {/* Cover */}
+        <div className="relative w-full" style={{ height: 160 }}>
+          {profile.cover_url
+            ? <img src={profile.cover_url} alt="cover" className="w-full h-full object-cover" />
+            : <div className="w-full h-full" style={{ background: "linear-gradient(135deg, hsl(221,55%,20%) 0%, hsl(213,80%,35%) 100%)" }} />}
+        </div>
+
+        <div className="px-5 pb-5">
+          {/* Avatar row */}
+          <div className="flex items-end justify-between -mt-10 mb-3">
+            <div className="flex-shrink-0">
+              {profile.avatar_url
+                ? <img src={profile.avatar_url} alt={displayInitials} className="w-20 h-20 rounded-full border-4 object-cover" style={{ borderColor: "white" }} />
+                : <div className="w-20 h-20 rounded-full border-4 flex items-center justify-center text-xl font-bold text-white" style={{ background: "hsl(213,80%,40%)", borderColor: "white" }}>{displayInitials}</div>}
+            </div>
+            {currentUser && !profile.is_me && (
+              <div className="flex gap-2 items-center pt-1">
+                <button className={following ? "btn-outline text-xs px-4 py-2" : "btn-primary text-xs px-4 py-2"} onClick={handleFollow}>
+                  {following ? "Подписан" : "+ Подписаться"}
+                </button>
+                {onOpenChat && (
+                  <button className="btn-outline text-xs px-3 py-2" onClick={() => onOpenChat(userId)} title="Написать сообщение">
+                    <Icon name="MessageSquare" size={14} />
+                  </button>
+                )}
+              </div>
+            )}
+          </div>
+
+          {/* Name & title */}
+          <h1 className="font-bold text-xl leading-tight">{profile.full_name}</h1>
+          <p className="text-sm mt-0.5 mb-2" style={{ color: "hsl(220,15%,50%)" }}>{profile.job_title}</p>
+          {profile.bio && <p className="text-sm mb-3 leading-relaxed" style={{ color: "hsl(220,25%,30%)" }}>{profile.bio}</p>}
+
+          {socials.length > 0 && (
+            <div className="flex flex-wrap gap-2 mb-3">
+              {socials.map((s) => (
+                <a key={s.key} href={s.href} target="_blank" rel="noopener noreferrer"
+                  className="flex items-center gap-1 text-xs px-2.5 py-1 rounded-full"
+                  style={{ background: `${s.color}15`, color: s.color, border: `1px solid ${s.color}30` }}>
+                  <Icon name={s.icon} size={11} />{s.label}
+                </a>
+              ))}
+            </div>
+          )}
+
+          {/* Stats */}
+          <div className="grid grid-cols-4 gap-3 pt-3 border-t" style={{ borderColor: "hsl(216,20%,90%)" }}>
+            {[
+              { label: "Подписчиков", value: followersCount, click: () => openFollowModal("followers") },
+              { label: "Подписок", value: profile.stats.following, click: () => openFollowModal("following") },
+              { label: "Постов", value: profile.stats.posts, click: undefined },
+              { label: "Просмотров", value: profile.stats.views, click: undefined },
+            ].map((s, i) => (
+              <button key={s.label} className="text-center py-1 rounded-lg hover:bg-gray-50 transition-colors" onClick={s.click}>
+                <div className="font-bold text-lg" style={{ color: "hsl(221,65%,22%)" }}>{s.value.toLocaleString("ru")}</div>
+                <div className="text-xs" style={{ color: i < 2 ? "hsl(213,80%,40%)" : "hsl(220,15%,55%)" }}>{s.label}</div>
+              </button>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      {/* Posts */}
+      <div className="flex items-center justify-between mb-3">
+        <h2 className="font-semibold text-xs uppercase tracking-wider" style={{ color: "hsl(220,15%,50%)" }}>Публикации</h2>
+        <div className="flex gap-1">
+          <button onClick={() => setPostView("grid")} className={`p-1.5 rounded ${postView === "grid" ? "btn-primary" : "btn-outline"}`}><Icon name="Grid3X3" size={13} /></button>
+          <button onClick={() => setPostView("list")} className={`p-1.5 rounded ${postView === "list" ? "btn-primary" : "btn-outline"}`}><Icon name="List" size={13} /></button>
+        </div>
+      </div>
+
+      {postView === "grid" && (
+        <div>
+          {mediaOnly.length > 0 && (
+            <div className="grid grid-cols-3 gap-1 mb-4">
+              {mediaOnly.map((p) => (
+                <div key={p.id} className="relative aspect-square rounded-lg overflow-hidden bg-gray-100 cursor-pointer"
+                  onClick={() => setMediaViewer({ url: p.media_url!, type: p.media_type || "image" })}>
+                  {p.media_type === "image"
+                    ? <img src={p.media_url} alt="" className="w-full h-full object-cover" />
+                    : <div className="w-full h-full flex items-center justify-center" style={{ background: "hsl(221,25%,18%)" }}><Icon name="Play" size={24} style={{ color: "white" }} /></div>}
+                  <div className="absolute bottom-0 left-0 right-0 flex gap-2 px-2 py-1" style={{ background: "rgba(0,0,0,0.4)", color: "white", fontSize: "10px" }}>
+                    <span className="flex items-center gap-1"><Icon name="Heart" size={10} />{p.likes_count}</span>
+                    <span className="flex items-center gap-1"><Icon name="Eye" size={10} />{p.views_count}</span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+          <div className="space-y-2">
+            {posts.filter((p) => !p.media_url).map((p) => (
+              <div key={p.id} className="post-card py-3 px-4">
+                <p className="text-sm" style={{ color: "hsl(220,25%,20%)" }}>{p.text}</p>
+                <div className="flex gap-3 mt-2 text-xs" style={{ color: "hsl(220,15%,60%)" }}>
+                  <span>{timeAgo(p.created_at)}</span>
+                  <span className="flex items-center gap-1"><Icon name="Heart" size={11} />{p.likes_count}</span>
+                  <span className="flex items-center gap-1"><Icon name="Eye" size={11} />{p.views_count}</span>
+                </div>
+              </div>
+            ))}
+          </div>
+          {posts.length === 0 && <div className="text-center py-10 text-sm" style={{ color: "hsl(220,15%,55%)" }}>Публикаций пока нет</div>}
+        </div>
+      )}
+
+      {postView === "list" && (
+        <div className="space-y-4">
+          {posts.map((p) => (
+            <PostCard key={p.id} post={p}
+              onLike={async (id) => { const r = await apiPost(POSTS_URL, { action: "like", post_id: id }); if (r.ok) setPosts((prev) => prev.map((pp) => pp.id === id ? { ...pp, liked: r.data.liked as boolean, likes_count: r.data.likes_count as number } : pp)); }}
+              onCommentAdded={(id) => setPosts((prev) => prev.map((pp) => pp.id === id ? { ...pp, comments_count: pp.comments_count + 1 } : pp))}
+              userInitials={currentUser ? getInitials(currentUser.full_name) : "?"}
+              userAvatarUrl={currentUser?.avatar_url}
+            />
+          ))}
+          {posts.length === 0 && <div className="text-center py-10 text-sm" style={{ color: "hsl(220,15%,55%)" }}>Публикаций пока нет</div>}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ─── Groups Page ──────────────────────────────────────────────────────────────
 interface Group { id: number; name: string; description: string; avatar_url: string; members_count: number; owner_id: number; is_member: boolean; initials: string; }
 interface GroupPost { id: number; text: string; media_url: string; media_type: string; likes_count: number; created_at: string; author: PostAuthor; }
@@ -837,13 +1056,14 @@ function GroupsPage({ currentUser }: { currentUser: User | null }) {
   );
 }
 
-function PostCard({ post, onLike, onCommentAdded, onDelete, userInitials, userAvatarUrl }: {
+function PostCard({ post, onLike, onCommentAdded, onDelete, userInitials, userAvatarUrl, onOpenProfile }: {
   post: Post;
   onLike: (id: number) => void;
   onCommentAdded: (id: number) => void;
   onDelete?: (id: number) => void;
   userInitials: string;
   userAvatarUrl?: string;
+  onOpenProfile?: (uid: number) => void;
 }) {
   const [showComments, setShowComments] = useState(false);
   const [comments, setComments] = useState<Comment[]>([]);
@@ -910,9 +1130,11 @@ function PostCard({ post, onLike, onCommentAdded, onDelete, userInitials, userAv
       )}
 
       <div className="flex items-start gap-3">
-        <Avatar initials={post.author.initials} avatarUrl={post.author.avatar_url} />
+        <div className="cursor-pointer" onClick={() => onOpenProfile?.(post.author.id)}>
+          <Avatar initials={post.author.initials} avatarUrl={post.author.avatar_url} />
+        </div>
         <div className="flex-1 min-w-0">
-          <div className="font-semibold text-sm">{post.author.full_name}</div>
+          <button className="font-semibold text-sm hover:underline text-left" onClick={() => onOpenProfile?.(post.author.id)}>{post.author.full_name}</button>
           <div className="text-xs mt-0.5" style={{ color: "hsl(220,15%,55%)" }}>{post.author.job_title}</div>
           <div className="text-xs mt-0.5" style={{ color: "hsl(220,15%,65%)" }}>{timeAgo(post.created_at)}</div>
         </div>
@@ -1012,7 +1234,7 @@ function PostCard({ post, onLike, onCommentAdded, onDelete, userInitials, userAv
   );
 }
 
-function FeedPage({ currentUser }: { currentUser: User | null }) {
+function FeedPage({ currentUser, onOpenProfile }: { currentUser: User | null; onOpenProfile?: (uid: number) => void }) {
   const [feedPosts, setFeedPosts] = useState<Post[]>([]);
   const [loading, setLoading] = useState(true);
   const [showCreate, setShowCreate] = useState(false);
@@ -1087,13 +1309,14 @@ function FeedPage({ currentUser }: { currentUser: User | null }) {
 
       {feedPosts.map((post) => (
         <PostCard key={post.id} post={post} onLike={handleLike} onCommentAdded={handleCommentAdded}
-          onDelete={handleDelete} userInitials={userInitials} userAvatarUrl={currentUser?.avatar_url} />
+          onDelete={handleDelete} userInitials={userInitials} userAvatarUrl={currentUser?.avatar_url}
+          onOpenProfile={onOpenProfile} />
       ))}
     </div>
   );
 }
 
-function FriendsPage() {
+function FriendsPage({ onOpenProfile }: { onOpenProfile?: (uid: number) => void }) {
   const [users, setUsers] = useState<SocialUser[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -1125,9 +1348,9 @@ function FriendsPage() {
           <div className="grid grid-cols-2 gap-3">
             {following.map((u) => (
               <div key={u.id} className="post-card flex items-center gap-3">
-                <Avatar initials={u.initials} />
+                <div className="cursor-pointer" onClick={() => onOpenProfile?.(u.id)}><Avatar initials={u.initials} /></div>
                 <div className="flex-1 min-w-0">
-                  <div className="font-medium text-sm truncate">{u.full_name}</div>
+                  <button className="font-medium text-sm truncate hover:underline text-left w-full" onClick={() => onOpenProfile?.(u.id)}>{u.full_name}</button>
                   <div className="text-xs truncate" style={{ color: "hsl(220,15%,55%)" }}>{u.job_title || "Участник"}</div>
                 </div>
                 <button className="btn-outline text-xs p-2" onClick={() => toggleFollow(u)} title="Отписаться">
@@ -1147,9 +1370,9 @@ function FriendsPage() {
           <div className="space-y-2">
             {suggestions.map((u) => (
               <div key={u.id} className="post-card flex items-center gap-4">
-                <Avatar initials={u.initials} />
+                <div className="cursor-pointer" onClick={() => onOpenProfile?.(u.id)}><Avatar initials={u.initials} /></div>
                 <div className="flex-1 min-w-0">
-                  <div className="font-medium text-sm">{u.full_name}</div>
+                  <button className="font-medium text-sm hover:underline text-left" onClick={() => onOpenProfile?.(u.id)}>{u.full_name}</button>
                   <div className="text-xs" style={{ color: "hsl(220,15%,55%)" }}>{u.job_title || "Участник сети"}</div>
                 </div>
                 <button className="btn-primary text-xs px-4 py-1.5" onClick={() => toggleFollow(u)}>
@@ -1172,7 +1395,7 @@ function FriendsPage() {
   );
 }
 
-function NotificationsPage() {
+function NotificationsPage({ onOpenProfile }: { onOpenProfile?: (uid: number) => void }) {
   const [notifs, setNotifs] = useState<Notification[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -1220,7 +1443,7 @@ function NotificationsPage() {
   );
 }
 
-function SearchPage({ onStartChat }: { onStartChat?: (userId: number) => void }) {
+function SearchPage({ onStartChat, onOpenProfile }: { onStartChat?: (userId: number) => void; onOpenProfile?: (uid: number) => void }) {
   const [query, setQuery] = useState("");
   const [users, setUsers] = useState<SocialUser[]>([]);
   const [loading, setLoading] = useState(true);
@@ -1274,19 +1497,16 @@ function SearchPage({ onStartChat }: { onStartChat?: (userId: number) => void })
           {loading && [1, 2, 3].map((i) => <div key={i} className="h-16 rounded-lg shimmer" />)}
           {!loading && users.map((u) => (
             <div key={u.id} className="post-card flex items-center gap-3">
-              <Avatar initials={u.initials} />
+              <div className="cursor-pointer" onClick={() => onOpenProfile?.(u.id)}><Avatar initials={u.initials} /></div>
               <div className="flex-1">
-                <div className="font-medium text-sm">{u.full_name}</div>
+                <button className="font-medium text-sm hover:underline text-left" onClick={() => onOpenProfile?.(u.id)}>{u.full_name}</button>
                 <div className="text-xs" style={{ color: "hsl(220,15%,55%)" }}>{u.job_title || "Участник сети"}</div>
               </div>
               <div className="flex gap-1.5">
                 <button className="btn-outline text-xs p-2" onClick={() => onStartChat?.(u.id)} title="Написать">
                   <Icon name="MessageSquare" size={13} />
                 </button>
-                <button
-                  className={u.is_following ? "btn-outline text-xs px-3 py-1.5" : "btn-primary text-xs px-3 py-1.5"}
-                  onClick={() => toggleFollow(u)}
-                >
+                <button className={u.is_following ? "btn-outline text-xs px-3 py-1.5" : "btn-primary text-xs px-3 py-1.5"} onClick={() => toggleFollow(u)}>
                   {u.is_following ? "Подписан" : "+"}
                 </button>
               </div>
@@ -1671,6 +1891,7 @@ function EditProfileModal({
 function ProfilePage({ user, onUserUpdate }: { user?: User; onUserUpdate?: (u: User) => void }) {
   const [editOpen, setEditOpen] = useState(false);
   const [uploadingAvatar, setUploadingAvatar] = useState(false);
+  const [uploadingCover, setUploadingCover] = useState(false);
   const [stats, setStats] = useState<UserStats | null>(null);
   const [userPosts, setUserPosts] = useState<Post[]>([]);
   const [loadingPosts, setLoadingPosts] = useState(false);
@@ -1679,6 +1900,7 @@ function ProfilePage({ user, onUserUpdate }: { user?: User; onUserUpdate?: (u: U
   const [followUsers, setFollowUsers] = useState<{ id: number; full_name: string; job_title: string; avatar_url: string; initials: string; is_following: boolean }[]>([]);
   const [mediaViewer, setMediaViewer] = useState<{ url: string; type: string } | null>(null);
   const avatarInputRef = { current: null as HTMLInputElement | null };
+  const coverInputRef = { current: null as HTMLInputElement | null };
 
   const displayName = user?.full_name || "Пользователь";
   const displayTitle = user?.job_title || "Участник сети";
@@ -1705,8 +1927,23 @@ function ProfilePage({ user, onUserUpdate }: { user?: User; onUserUpdate?: (u: U
     const r = await apiPost(SOCIAL_URL, { action: "update_avatar", file_data: b64, file_type: file.type });
     setUploadingAvatar(false);
     if (r.ok && r.data.avatar_url) {
-      onUserUpdate?.({ ...user!, avatar_url: r.data.avatar_url as string });
-      localStorage.setItem("nexus_user", JSON.stringify({ ...user, avatar_url: r.data.avatar_url }));
+      const updated = { ...user!, avatar_url: r.data.avatar_url as string };
+      onUserUpdate?.(updated);
+      localStorage.setItem("nexus_user", JSON.stringify(updated));
+    }
+  };
+
+  const handleCoverUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setUploadingCover(true);
+    const b64 = await readFileAsBase64(file);
+    const r = await apiPost(SOCIAL_URL, { action: "upload_cover", file_data: b64, file_type: file.type });
+    setUploadingCover(false);
+    if (r.ok && r.data.cover_url) {
+      const updated = { ...user!, cover_url: r.data.cover_url as string };
+      onUserUpdate?.(updated);
+      localStorage.setItem("nexus_user", JSON.stringify(updated));
     }
   };
 
@@ -1741,6 +1978,7 @@ function ProfilePage({ user, onUserUpdate }: { user?: User; onUserUpdate?: (u: U
   return (
     <>
       <input ref={(el) => { avatarInputRef.current = el; }} type="file" accept="image/*" className="hidden" onChange={handleAvatarUpload} />
+      <input ref={(el) => { coverInputRef.current = el; }} type="file" accept="image/*" className="hidden" onChange={handleCoverUpload} />
       {editOpen && user && (
         <EditProfileModal user={user} onClose={() => setEditOpen(false)} onSave={(u) => { onUserUpdate?.(u); }} />
       )}
@@ -1754,52 +1992,65 @@ function ProfilePage({ user, onUserUpdate }: { user?: User; onUserUpdate?: (u: U
         />
       )}
     <div className="max-w-3xl mx-auto px-4 py-5">
-      <div className="post-card mb-4 overflow-hidden">
-        {/* Cover */}
-        <div className="h-28 -mx-5 -mt-5 mb-0" style={{ background: "linear-gradient(135deg, hsl(221,55%,20%) 0%, hsl(213,80%,35%) 100%)" }} />
-        {/* Avatar row — below cover */}
-        <div className="flex items-center justify-between px-0 pt-3 pb-2">
-          <div className="relative flex-shrink-0 group -mt-10" onClick={() => avatarInputRef.current?.click()} style={{ cursor: "pointer" }}>
-            {user?.avatar_url
-              ? <img src={user.avatar_url} alt={displayInitials} className="w-20 h-20 rounded-full border-4 object-cover" style={{ borderColor: "white" }} />
-              : <div className="w-20 h-20 rounded-full border-4 flex items-center justify-center text-xl font-bold text-white" style={{ background: "hsl(213,80%,40%)", borderColor: "white" }}>{displayInitials}</div>}
-            <div className="absolute inset-0 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity" style={{ background: "rgba(0,0,0,0.45)" }}>
-              {uploadingAvatar ? <Icon name="Loader" size={20} style={{ color: "white" }} className="animate-spin" /> : <Icon name="Camera" size={20} style={{ color: "white" }} />}
-            </div>
+      <div className="post-card mb-4 overflow-hidden p-0">
+        {/* Cover — кликабельная, загрузка фото */}
+        <div className="relative w-full group cursor-pointer" style={{ height: 160 }} onClick={() => coverInputRef.current?.click()}>
+          {user?.cover_url
+            ? <img src={user.cover_url} alt="cover" className="w-full h-full object-cover" />
+            : <div className="w-full h-full" style={{ background: "linear-gradient(135deg, hsl(221,55%,20%) 0%, hsl(213,80%,35%) 100%)" }} />}
+          <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity" style={{ background: "rgba(0,0,0,0.3)" }}>
+            {uploadingCover
+              ? <Icon name="Loader" size={24} style={{ color: "white" }} className="animate-spin" />
+              : <div className="flex flex-col items-center gap-1"><Icon name="Camera" size={24} style={{ color: "white" }} /><span className="text-xs text-white">Изменить обложку</span></div>}
           </div>
-          <div className="flex gap-2 items-center pt-1 flex-shrink-0">
-            <button className="btn-primary text-xs px-4 py-2" onClick={() => setEditOpen(true)}>Редактировать</button>
-          </div>
-        </div>
-        {/* Name + title — NOT touching cover */}
-        <div className="pt-1 pb-3">
-          <h1 className="font-bold text-xl leading-tight">{displayName}</h1>
-          <p className="text-sm mt-0.5" style={{ color: "hsl(220,15%,50%)" }}>{displayTitle}</p>
-          {socials.length > 0 && (
-            <div className="flex items-center gap-2 mt-2 flex-wrap">
-              {socials.map((s) => (
-                <a key={s.key} href={`${s.prefix}${s.value}`} target="_blank" rel="noopener noreferrer"
-                  className="flex items-center gap-1 text-xs px-2 py-0.5 rounded-full transition-opacity hover:opacity-75"
-                  style={{ background: `${s.color}15`, color: s.color, border: `1px solid ${s.color}30` }}>
-                  <Icon name={s.icon} size={11} />{s.label}
-                </a>
-              ))}
-            </div>
-          )}
-          {displayBio && <p className="text-sm mt-2 leading-relaxed" style={{ color: "hsl(220,25%,25%)" }}>{displayBio}</p>}
-          {!displayBio && (
-            <p className="text-sm mt-2 italic cursor-pointer hover:underline" style={{ color: "hsl(220,15%,65%)" }} onClick={() => setEditOpen(true)}>Добавьте информацию о себе...</p>
-          )}
         </div>
 
-        <div className="grid grid-cols-4 gap-3 pt-3 border-t" style={{ borderColor: "hsl(216,20%,90%)" }}>
-          {allStats.map((s, i) => (
-            <button key={s.label} className="text-center py-1 rounded-lg hover:bg-gray-50 transition-colors"
-              onClick={() => { if (i === 0) openFollowModal("followers"); else if (i === 1) openFollowModal("following"); }}>
-              <div className="font-bold text-lg" style={{ color: "hsl(221,65%,22%)" }}>{s.value}</div>
-              <div className="text-xs" style={{ color: i < 2 ? "hsl(213,80%,40%)" : "hsl(220,15%,55%)" }}>{s.label}</div>
-            </button>
-          ))}
+        <div className="px-5 pb-5">
+          {/* Avatar row — ниже обложки */}
+          <div className="flex items-end justify-between -mt-10 mb-3">
+            <div className="relative flex-shrink-0 group cursor-pointer" onClick={() => avatarInputRef.current?.click()}>
+              {user?.avatar_url
+                ? <img src={user.avatar_url} alt={displayInitials} className="w-20 h-20 rounded-full border-4 object-cover" style={{ borderColor: "white" }} />
+                : <div className="w-20 h-20 rounded-full border-4 flex items-center justify-center text-xl font-bold text-white" style={{ background: "hsl(213,80%,40%)", borderColor: "white" }}>{displayInitials}</div>}
+              <div className="absolute inset-0 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity" style={{ background: "rgba(0,0,0,0.45)" }}>
+                {uploadingAvatar ? <Icon name="Loader" size={20} style={{ color: "white" }} className="animate-spin" /> : <Icon name="Camera" size={20} style={{ color: "white" }} />}
+              </div>
+            </div>
+            <div className="flex gap-2 items-center pt-1 flex-shrink-0">
+              <button className="btn-primary text-xs px-4 py-2" onClick={() => setEditOpen(true)}>Редактировать</button>
+            </div>
+          </div>
+
+          {/* Name + title */}
+          <div className="pt-1 pb-3">
+            <h1 className="font-bold text-xl leading-tight">{displayName}</h1>
+            <p className="text-sm mt-0.5" style={{ color: "hsl(220,15%,50%)" }}>{displayTitle}</p>
+            {socials.length > 0 && (
+              <div className="flex items-center gap-2 mt-2 flex-wrap">
+                {socials.map((s) => (
+                  <a key={s.key} href={`${s.prefix}${s.value}`} target="_blank" rel="noopener noreferrer"
+                    className="flex items-center gap-1 text-xs px-2 py-0.5 rounded-full transition-opacity hover:opacity-75"
+                    style={{ background: `${s.color}15`, color: s.color, border: `1px solid ${s.color}30` }}>
+                    <Icon name={s.icon} size={11} />{s.label}
+                  </a>
+                ))}
+              </div>
+            )}
+            {displayBio && <p className="text-sm mt-2 leading-relaxed" style={{ color: "hsl(220,25%,25%)" }}>{displayBio}</p>}
+            {!displayBio && (
+              <p className="text-sm mt-2 italic cursor-pointer hover:underline" style={{ color: "hsl(220,15%,65%)" }} onClick={() => setEditOpen(true)}>Добавьте информацию о себе...</p>
+            )}
+          </div>
+
+          <div className="grid grid-cols-4 gap-3 pt-3 border-t" style={{ borderColor: "hsl(216,20%,90%)" }}>
+            {allStats.map((s, i) => (
+              <button key={s.label} className="text-center py-1 rounded-lg hover:bg-gray-50 transition-colors"
+                onClick={() => { if (i === 0) openFollowModal("followers"); else if (i === 1) openFollowModal("following"); }}>
+                <div className="font-bold text-lg" style={{ color: "hsl(221,65%,22%)" }}>{s.value}</div>
+                <div className="text-xs" style={{ color: i < 2 ? "hsl(213,80%,40%)" : "hsl(220,15%,55%)" }}>{s.label}</div>
+              </button>
+            ))}
+          </div>
         </div>
       </div>
 
@@ -2081,6 +2332,11 @@ export default function Index() {
   const [unreadCount, setUnreadCount] = useState(0);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [isAdmin, setIsAdmin] = useState(false);
+  const [viewingUserId, setViewingUserId] = useState<number | null>(null);
+  // Связанные аккаунты для переключения (токен → user)
+  const [linkedAccounts, setLinkedAccounts] = useState<{ token: string; user: User }[]>(() => {
+    try { return JSON.parse(localStorage.getItem("nexus_linked_accounts") || "[]"); } catch { return []; }
+  });
 
   useEffect(() => {
     const token = localStorage.getItem("nexus_token");
@@ -2123,10 +2379,24 @@ export default function Index() {
     return () => clearInterval(interval);
   }, [currentUser]);
 
-  const handleAuth = (user: User, _token: string) => {
+  const handleAuth = (user: User, token: string) => {
+    // Сохраняем текущий аккаунт в связанные (если есть другой активный)
+    const prevToken = localStorage.getItem("nexus_token");
+    const prevUser = localStorage.getItem("nexus_user");
+    if (prevToken && prevUser && prevToken !== token) {
+      try {
+        const pu = JSON.parse(prevUser) as User;
+        setLinkedAccounts((prev) => {
+          const exists = prev.some((a) => a.token === prevToken);
+          const updated = exists ? prev : [...prev, { token: prevToken, user: pu }];
+          localStorage.setItem("nexus_linked_accounts", JSON.stringify(updated));
+          return updated;
+        });
+      } catch { /* ignore */ }
+    }
     setCurrentUser(user);
+    setIsAdmin(false);
     requestPushPermission();
-    // Проверяем права
     setTimeout(() => {
       fetch(POSTS_URL, { method: "POST", headers: { "Content-Type": "application/json", "X-Auth-Token": localStorage.getItem("nexus_token") || "" }, body: JSON.stringify({ action: "admin_data" }) })
         .then((r) => { if (r.ok) setIsAdmin(true); });
@@ -2146,8 +2416,37 @@ export default function Index() {
 
   const navigate = (section: Section) => {
     setActive(section);
+    setViewingUserId(null);
     setMobileMenuOpen(false);
     if (section === "notifications") setUnreadCount(0);
+  };
+
+  const openUserProfile = (uid: number) => {
+    if (uid === currentUser?.id) { setActive("profile"); setViewingUserId(null); return; }
+    setViewingUserId(uid);
+  };
+
+  const switchAccount = (token: string, user: User) => {
+    // Сохранить текущий в linked
+    const curToken = localStorage.getItem("nexus_token");
+    const curUser = localStorage.getItem("nexus_user");
+    if (curToken && curUser) {
+      setLinkedAccounts((prev) => {
+        const exists = prev.some((a) => a.token === curToken);
+        const updated = exists ? prev : [...prev, { token: curToken, user: currentUser! }];
+        const filtered = updated.filter((a) => a.token !== token);
+        localStorage.setItem("nexus_linked_accounts", JSON.stringify(filtered));
+        return filtered;
+      });
+    }
+    localStorage.setItem("nexus_token", token);
+    localStorage.setItem("nexus_user", JSON.stringify(user));
+    setCurrentUser(user);
+    setIsAdmin(false);
+    setActive("feed");
+    setViewingUserId(null);
+    fetch(POSTS_URL, { method: "POST", headers: { "Content-Type": "application/json", "X-Auth-Token": token }, body: JSON.stringify({ action: "admin_data" }) })
+      .then((r) => { if (r.ok) setIsAdmin(true); });
   };
 
   if (!authChecked) return null;
@@ -2156,16 +2455,35 @@ export default function Index() {
   const userInitials = getInitials(currentUser.full_name);
   const visibleNav = navItems.filter((item) => !item.adminOnly || isAdmin);
 
+  // Если просматриваем чужой профиль
+  if (viewingUserId) {
+    return (
+      <div className="flex h-screen overflow-hidden bg-background font-ibm">
+        <aside className="hidden md:flex w-60 flex-shrink-0 flex-col sidebar-dark">
+          <SidebarContent />
+        </aside>
+        <main className="flex-1 overflow-y-auto pb-16 md:pb-0">
+          <UserProfilePage userId={viewingUserId} currentUser={currentUser}
+            onBack={() => setViewingUserId(null)}
+            onOpenChat={async (uid) => {
+              const r = await apiPost(SOCIAL_URL, { action: "chat_start", partner_id: uid });
+              if (r.ok) { setViewingUserId(null); setActive("messages"); }
+            }} />
+        </main>
+      </div>
+    );
+  }
+
   const renderPage = () => {
     switch (active) {
-      case "feed": return <FeedPage currentUser={currentUser} />;
-      case "friends": return <FriendsPage />;
+      case "feed": return <FeedPage currentUser={currentUser} onOpenProfile={openUserProfile} />;
+      case "friends": return <FriendsPage onOpenProfile={openUserProfile} />;
       case "groups": return <GroupsPage currentUser={currentUser} />;
-      case "notifications": return <NotificationsPage />;
+      case "notifications": return <NotificationsPage onOpenProfile={openUserProfile} />;
       case "search": return <SearchPage onStartChat={async (uid) => {
         const r = await apiPost(SOCIAL_URL, { action: "chat_start", partner_id: uid });
         if (r.ok) setActive("messages");
-      }} />;
+      }} onOpenProfile={openUserProfile} />;
       case "messages": return <MessagesPage currentUser={currentUser} />;
       case "profile": return <ProfilePage user={currentUser} onUserUpdate={(u) => { setCurrentUser(u); localStorage.setItem("nexus_user", JSON.stringify(u)); }} />;
       case "admin": return <AdminPage />;
@@ -2210,6 +2528,20 @@ export default function Index() {
       </nav>
 
       <div className="px-3 py-4 border-t" style={{ borderColor: "hsl(221,25%,20%)" }}>
+        {/* Связанные аккаунты */}
+        {linkedAccounts.length > 0 && (
+          <div className="mb-2 pt-2 border-t" style={{ borderColor: "hsl(221,25%,20%)" }}>
+            <div className="text-xs px-2 mb-1" style={{ color: "hsl(214,25%,38%)" }}>Другие аккаунты</div>
+            {linkedAccounts.map((acc) => (
+              <button key={acc.token} className="w-full flex items-center gap-2 px-2 py-1.5 rounded-md hover:bg-white/5 transition-colors" onClick={() => switchAccount(acc.token, acc.user)}>
+                {acc.user.avatar_url
+                  ? <img src={acc.user.avatar_url} alt="" className="w-6 h-6 rounded-full object-cover flex-shrink-0" />
+                  : <div className="w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold text-white flex-shrink-0" style={{ background: "hsl(213,80%,38%)" }}>{acc.user.full_name.split(" ").map((w) => w[0]).join("").slice(0,2).toUpperCase()}</div>}
+                <span className="text-xs truncate" style={{ color: "hsl(214,25%,60%)" }}>{acc.user.full_name}</span>
+              </button>
+            ))}
+          </div>
+        )}
         <div className="flex items-center gap-2.5">
           {currentUser.avatar_url
             ? <img src={currentUser.avatar_url} alt={userInitials} className="w-8 h-8 rounded-full object-cover flex-shrink-0" />
