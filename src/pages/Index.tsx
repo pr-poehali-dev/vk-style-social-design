@@ -2,6 +2,34 @@ import { useState, useEffect } from "react";
 import Icon from "@/components/ui/icon";
 
 const AUTH_URL = "https://functions.poehali.dev/e7256c2b-25ee-4d8d-a177-79b9ba10f5b5";
+const POSTS_URL = "https://functions.poehali.dev/a9e9bed7-8a44-4828-a993-216d5efd7b3d";
+
+interface PostAuthor {
+  id: number;
+  full_name: string;
+  job_title: string;
+  initials: string;
+}
+
+interface Post {
+  id: number;
+  text: string;
+  tags: string[];
+  likes_count: number;
+  comments_count: number;
+  views_count: number;
+  created_at: string;
+  author: PostAuthor;
+  liked: boolean;
+}
+
+function timeAgo(dateStr: string): string {
+  const diff = (Date.now() - new Date(dateStr).getTime()) / 1000;
+  if (diff < 60) return "только что";
+  if (diff < 3600) return `${Math.floor(diff / 60)} мин назад`;
+  if (diff < 86400) return `${Math.floor(diff / 3600)} ч назад`;
+  return `${Math.floor(diff / 86400)} д назад`;
+}
 
 interface User {
   id: number;
@@ -171,45 +199,6 @@ const navItems: { id: Section; label: string; icon: string; badge?: number }[] =
   { id: "profile", label: "Профиль", icon: "User" },
 ];
 
-const posts = [
-  {
-    id: 1,
-    author: "Марина Соколова",
-    role: "Управляющий партнёр, Sokolova Legal",
-    avatar: "МС",
-    time: "2 ч назад",
-    text: "Подписали стратегическое соглашение с ключевыми партнёрами в Европе. Рынок меняется быстрее, чем мы ожидали — важно оставаться гибкими и не упускать момент. Делюсь нашим кейсом адаптации стратегии за 6 месяцев.",
-    likes: 148,
-    comments: 34,
-    views: 2310,
-    tags: ["Стратегия", "B2B", "Партнёрство"],
-  },
-  {
-    id: 2,
-    author: "Дмитрий Волков",
-    role: "CEO, TechVenture Group",
-    avatar: "ДВ",
-    time: "5 ч назад",
-    text: "Три главных ошибки при масштабировании команды от 20 до 200 человек — и как мы их исправляли. Сохраните пост, пригодится тем, кто планирует рост.",
-    likes: 312,
-    comments: 67,
-    views: 5890,
-    tags: ["HR", "Масштабирование", "Управление"],
-  },
-  {
-    id: 3,
-    author: "Елена Карпова",
-    role: "CFO, FinBridge Capital",
-    avatar: "ЕК",
-    time: "1 д назад",
-    text: "Инфляционное давление на операционные расходы во II квартале 2026 — как мы оптимизировали бюджет без потери качества. Кратко о методологии и результатах.",
-    likes: 95,
-    comments: 18,
-    views: 1420,
-    tags: ["Финансы", "Оптимизация"],
-  },
-];
-
 const contacts = [
   { name: "Игорь Петров", role: "Директор по продажам", avatar: "ИП", mutual: 12, online: true },
   { name: "Анна Белова", role: "Head of Marketing", avatar: "АБ", mutual: 8, online: false },
@@ -274,64 +263,207 @@ function Avatar({ initials, size = "md" }: { initials: string; size?: "sm" | "md
   );
 }
 
-function FeedPage() {
-  const [liked, setLiked] = useState<Record<number, boolean>>({});
+function CreatePostModal({ userInitials, onClose, onCreated }: { userInitials: string; onClose: () => void; onCreated: (p: Post) => void }) {
+  const [text, setText] = useState("");
+  const [tags, setTags] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+
+  const submit = async () => {
+    if (!text.trim()) { setError("Введите текст поста"); return; }
+    setLoading(true); setError("");
+    const token = localStorage.getItem("nexus_token") || "";
+    const res = await fetch(POSTS_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "X-Auth-Token": token },
+      body: JSON.stringify({ action: "create", text: text.trim(), tags: tags.trim() }),
+    });
+    const raw = await res.text();
+    let json: Record<string, unknown> = {};
+    try { json = JSON.parse(raw); } catch { /* ignore */ }
+    if (typeof json === "string") { try { json = JSON.parse(json as string); } catch { /* ignore */ } }
+    setLoading(false);
+    if (!res.ok) { setError((json.error as string) || "Ошибка создания поста"); return; }
+    onCreated((json.post as Post));
+    onClose();
+  };
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center p-4"
+      style={{ background: "rgba(10,15,30,0.7)", backdropFilter: "blur(4px)" }}
+      onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
+    >
+      <div className="w-full max-w-lg rounded-xl p-6 section-enter" style={{ background: "hsl(0,0%,100%)", border: "1px solid hsl(216,20%,88%)" }}>
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="font-semibold text-base">Новая публикация</h2>
+          <button onClick={onClose} className="w-8 h-8 rounded-md flex items-center justify-center hover:bg-muted" style={{ color: "hsl(220,15%,55%)" }}>
+            <Icon name="X" size={16} />
+          </button>
+        </div>
+        <div className="flex items-start gap-3 mb-4">
+          <Avatar initials={userInitials} />
+          <textarea
+            className="flex-1 px-3 py-2.5 rounded-lg border text-sm outline-none focus:border-blue-400 transition-all resize-none"
+            style={{ borderColor: "hsl(216,20%,85%)", color: "hsl(220,30%,15%)", minHeight: 120 }}
+            placeholder="Поделитесь профессиональными мыслями, новостями или опытом..."
+            value={text}
+            onChange={(e) => setText(e.target.value)}
+            autoFocus
+          />
+        </div>
+        <div className="mb-4">
+          <input
+            className="w-full px-3.5 py-2 rounded-lg border text-sm outline-none focus:border-blue-400 transition-all"
+            style={{ borderColor: "hsl(216,20%,85%)", color: "hsl(220,30%,15%)" }}
+            placeholder="Теги через запятую: Стратегия, B2B, Управление"
+            value={tags}
+            onChange={(e) => setTags(e.target.value)}
+          />
+        </div>
+        {error && (
+          <div className="px-3 py-2 rounded-lg text-sm mb-3" style={{ background: "hsl(0,80%,97%)", color: "hsl(0,72%,40%)", border: "1px solid hsl(0,72%,88%)" }}>{error}</div>
+        )}
+        <div className="flex justify-between items-center">
+          <span className="text-xs" style={{ color: text.length > 2800 ? "hsl(0,72%,51%)" : "hsl(220,15%,60%)" }}>{text.length} / 3000</span>
+          <div className="flex gap-2">
+            <button onClick={onClose} className="btn-outline text-xs px-4 py-2">Отмена</button>
+            <button onClick={submit} disabled={loading || !text.trim()} className="btn-primary text-xs px-4 py-2" style={{ opacity: loading ? 0.7 : 1 }}>
+              {loading ? "Публикация..." : "Опубликовать"}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function FeedPage({ currentUser }: { currentUser: User | null }) {
+  const [feedPosts, setFeedPosts] = useState<Post[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [showCreate, setShowCreate] = useState(false);
+  const userInitials = currentUser ? getInitials(currentUser.full_name) : "?";
+
+  useEffect(() => {
+    const token = localStorage.getItem("nexus_token") || "";
+    fetch(POSTS_URL, { headers: { "X-Auth-Token": token } })
+      .then((r) => r.text())
+      .then((raw) => {
+        let json: Record<string, unknown> = {};
+        try { json = JSON.parse(raw); } catch { /* ignore */ }
+        if (typeof json === "string") { try { json = JSON.parse(json as string); } catch { /* ignore */ } }
+        setFeedPosts((json.posts as Post[]) || []);
+      })
+      .finally(() => setLoading(false));
+  }, []);
+
+  const handleLike = async (postId: number) => {
+    const token = localStorage.getItem("nexus_token") || "";
+    const res = await fetch(POSTS_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "X-Auth-Token": token },
+      body: JSON.stringify({ action: "like", post_id: postId }),
+    });
+    const raw = await res.text();
+    let json: Record<string, unknown> = {};
+    try { json = JSON.parse(raw); } catch { /* ignore */ }
+    if (typeof json === "string") { try { json = JSON.parse(json as string); } catch { /* ignore */ } }
+    if (res.ok) {
+      setFeedPosts((prev) => prev.map((p) => p.id === postId
+        ? { ...p, liked: json.liked as boolean, likes_count: json.likes_count as number }
+        : p
+      ));
+    }
+  };
+
   return (
     <div className="max-w-2xl mx-auto px-4 py-5 space-y-4">
+      {showCreate && currentUser && (
+        <CreatePostModal
+          userInitials={userInitials}
+          onClose={() => setShowCreate(false)}
+          onCreated={(p) => setFeedPosts((prev) => [p, ...prev])}
+        />
+      )}
+
+      {/* Compose trigger */}
       <div className="post-card">
         <div className="flex items-center gap-3">
-          <Avatar initials="АК" />
+          <Avatar initials={userInitials} />
           <button
-            className="flex-1 text-left px-4 py-2.5 rounded-full border text-sm transition-colors"
+            className="flex-1 text-left px-4 py-2.5 rounded-full border text-sm transition-colors hover:border-blue-400"
             style={{ borderColor: "hsl(216,20%,85%)", color: "hsl(220,15%,55%)" }}
+            onClick={() => setShowCreate(true)}
           >
             Поделитесь профессиональными новостями...
           </button>
         </div>
         <div className="flex items-center gap-1.5 mt-3 pt-3 border-t" style={{ borderColor: "hsl(216,20%,90%)" }}>
-          {[{ icon: "Image", label: "Фото" }, { icon: "BarChart2", label: "Опрос" }, { icon: "FileText", label: "Статья" }].map((btn) => (
-            <button key={btn.label} className="btn-outline text-xs px-3 py-1.5 flex items-center gap-1.5">
-              <Icon name={btn.icon} size={13} />
-              {btn.label}
-            </button>
-          ))}
+          <button className="btn-outline text-xs px-3 py-1.5 flex items-center gap-1.5" onClick={() => setShowCreate(true)}>
+            <Icon name="FileText" size={13} />Написать пост
+          </button>
         </div>
       </div>
 
-      {posts.map((post) => (
+      {/* Loading */}
+      {loading && (
+        <div className="space-y-3">
+          {[1, 2].map((i) => (
+            <div key={i} className="post-card space-y-3">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-full shimmer" />
+                <div className="flex-1 space-y-2">
+                  <div className="h-3 rounded shimmer w-1/3" />
+                  <div className="h-2.5 rounded shimmer w-1/2" />
+                </div>
+              </div>
+              <div className="h-3 rounded shimmer" />
+              <div className="h-3 rounded shimmer w-4/5" />
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Empty */}
+      {!loading && feedPosts.length === 0 && (
+        <div className="post-card text-center py-12" style={{ color: "hsl(220,15%,55%)" }}>
+          <Icon name="Newspaper" size={36} className="mx-auto mb-3 opacity-30" />
+          <div className="text-sm font-medium mb-1">Лента пока пуста</div>
+          <div className="text-xs">Будьте первым — опубликуйте пост!</div>
+          <button className="btn-primary text-xs px-4 py-2 mt-4" onClick={() => setShowCreate(true)}>Написать пост</button>
+        </div>
+      )}
+
+      {/* Posts */}
+      {feedPosts.map((post) => (
         <div key={post.id} className="post-card">
           <div className="flex items-start gap-3">
-            <Avatar initials={post.avatar} />
+            <Avatar initials={post.author.initials} />
             <div className="flex-1 min-w-0">
-              <div className="flex items-start justify-between gap-2">
-                <div>
-                  <div className="font-semibold text-sm">{post.author}</div>
-                  <div className="text-xs mt-0.5" style={{ color: "hsl(220,15%,55%)" }}>{post.role}</div>
-                  <div className="text-xs mt-0.5" style={{ color: "hsl(220,15%,65%)" }}>{post.time}</div>
-                </div>
-                <button className="btn-primary text-xs px-3 py-1 flex-shrink-0">+ Подписаться</button>
-              </div>
+              <div className="font-semibold text-sm">{post.author.full_name}</div>
+              <div className="text-xs mt-0.5" style={{ color: "hsl(220,15%,55%)" }}>{post.author.job_title}</div>
+              <div className="text-xs mt-0.5" style={{ color: "hsl(220,15%,65%)" }}>{timeAgo(post.created_at)}</div>
             </div>
           </div>
-          <p className="mt-3 text-sm leading-relaxed" style={{ color: "hsl(220,25%,20%)" }}>{post.text}</p>
-          <div className="flex flex-wrap gap-1.5 mt-3">
-            {post.tags.map((tag) => (
-              <span key={tag} className="stat-badge">#{tag}</span>
-            ))}
-          </div>
+          <p className="mt-3 text-sm leading-relaxed whitespace-pre-wrap" style={{ color: "hsl(220,25%,20%)" }}>{post.text}</p>
+          {post.tags.length > 0 && (
+            <div className="flex flex-wrap gap-1.5 mt-3">
+              {post.tags.map((tag) => <span key={tag} className="stat-badge">#{tag}</span>)}
+            </div>
+          )}
           <div className="flex items-center justify-between mt-4 pt-3 border-t text-xs" style={{ borderColor: "hsl(216,20%,90%)", color: "hsl(220,15%,55%)" }}>
-            <span className="flex items-center gap-1"><Icon name="Eye" size={13} />{post.views.toLocaleString("ru")} просмотров</span>
+            <span className="flex items-center gap-1"><Icon name="Eye" size={13} />{post.views_count.toLocaleString("ru")} просмотров</span>
             <div className="flex items-center gap-4">
               <button
                 className="flex items-center gap-1.5 transition-colors"
-                onClick={() => setLiked((p) => ({ ...p, [post.id]: !p[post.id] }))}
-                style={{ color: liked[post.id] ? "hsl(0,72%,51%)" : "hsl(220,15%,55%)" }}
+                onClick={() => handleLike(post.id)}
+                style={{ color: post.liked ? "hsl(0,72%,51%)" : "hsl(220,15%,55%)" }}
               >
                 <Icon name="Heart" size={14} />
-                {liked[post.id] ? post.likes + 1 : post.likes}
+                {post.likes_count}
               </button>
               <button className="flex items-center gap-1.5 hover:text-blue-600 transition-colors">
-                <Icon name="MessageCircle" size={14} />{post.comments}
+                <Icon name="MessageCircle" size={14} />{post.comments_count}
               </button>
               <button className="flex items-center gap-1.5 hover:text-blue-600 transition-colors">
                 <Icon name="Share2" size={14} />Поделиться
@@ -467,19 +599,9 @@ function SearchPage() {
       )}
 
       {tab === "posts" && (
-        <div className="space-y-3">
-          {posts.filter((p) => !query || p.text.toLowerCase().includes(query.toLowerCase())).map((post) => (
-            <div key={post.id} className="post-card">
-              <div className="flex items-center gap-2 mb-2">
-                <Avatar initials={post.avatar} size="sm" />
-                <div>
-                  <div className="font-medium text-sm">{post.author}</div>
-                  <div className="text-xs" style={{ color: "hsl(220,15%,55%)" }}>{post.time}</div>
-                </div>
-              </div>
-              <p className="text-sm leading-relaxed" style={{ color: "hsl(220,25%,20%)" }}>{post.text}</p>
-            </div>
-          ))}
+        <div className="post-card text-center py-10" style={{ color: "hsl(220,15%,60%)" }}>
+          <Icon name="Search" size={28} className="mx-auto mb-2 opacity-30" />
+          <div className="text-sm">Поиск по постам будет доступен скоро</div>
         </div>
       )}
 
@@ -809,18 +931,9 @@ function ProfilePage({ user, onUserUpdate }: { user?: User; onUserUpdate?: (u: U
       </div>
 
       <h2 className="font-semibold text-xs uppercase tracking-wider mb-3" style={{ color: "hsl(220,15%,50%)" }}>Публикации</h2>
-      <div className="space-y-3">
-        {posts.slice(0, 2).map((post) => (
-          <div key={post.id} className="post-card">
-            <p className="text-sm leading-relaxed mb-3" style={{ color: "hsl(220,25%,20%)" }}>{post.text}</p>
-            <div className="flex items-center gap-4 text-xs" style={{ color: "hsl(220,15%,55%)" }}>
-              <span className="flex items-center gap-1"><Icon name="Eye" size={12} />{post.views.toLocaleString("ru")}</span>
-              <span className="flex items-center gap-1"><Icon name="Heart" size={12} />{post.likes}</span>
-              <span className="flex items-center gap-1"><Icon name="MessageCircle" size={12} />{post.comments}</span>
-              <span className="ml-auto">{post.time}</span>
-            </div>
-          </div>
-        ))}
+      <div className="post-card text-center py-10" style={{ color: "hsl(220,15%,60%)" }}>
+        <Icon name="FileText" size={28} className="mx-auto mb-2 opacity-30" />
+        <div className="text-sm">Публикации появятся здесь</div>
       </div>
     </div>
     </>
@@ -835,6 +948,7 @@ export default function Index() {
   const [active, setActive] = useState<Section>("feed");
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [authChecked, setAuthChecked] = useState(false);
+  const [showCreatePost, setShowCreatePost] = useState(false);
 
   useEffect(() => {
     const token = localStorage.getItem("nexus_token");
@@ -870,7 +984,7 @@ export default function Index() {
 
   const renderPage = () => {
     switch (active) {
-      case "feed": return <FeedPage />;
+      case "feed": return <FeedPage currentUser={currentUser} />;
       case "friends": return <FriendsPage />;
       case "notifications": return <NotificationsPage />;
       case "search": return <SearchPage />;
@@ -934,10 +1048,17 @@ export default function Index() {
       </aside>
 
       <main className="flex-1 overflow-hidden flex flex-col min-w-0">
+        {showCreatePost && currentUser && (
+          <CreatePostModal
+            userInitials={userInitials}
+            onClose={() => setShowCreatePost(false)}
+            onCreated={() => { setShowCreatePost(false); setActive("feed"); }}
+          />
+        )}
         <header className="h-12 flex-shrink-0 flex items-center justify-between px-6 border-b bg-card" style={{ borderColor: "hsl(216,20%,88%)" }}>
           <h1 className="font-semibold text-sm">{navItems.find((n) => n.id === active)?.label}</h1>
           <div className="flex items-center gap-2">
-            <button className="btn-outline text-xs px-3 py-1.5 flex items-center gap-1.5">
+            <button className="btn-primary text-xs px-3 py-1.5 flex items-center gap-1.5" onClick={() => setShowCreatePost(true)}>
               <Icon name="Plus" size={13} />Создать пост
             </button>
             <button
