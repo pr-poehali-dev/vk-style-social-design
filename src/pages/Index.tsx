@@ -3,6 +3,62 @@ import Icon from "@/components/ui/icon";
 
 const AUTH_URL = "https://functions.poehali.dev/e7256c2b-25ee-4d8d-a177-79b9ba10f5b5";
 const POSTS_URL = "https://functions.poehali.dev/a9e9bed7-8a44-4828-a993-216d5efd7b3d";
+const SOCIAL_URL = "https://functions.poehali.dev/1373884d-4344-47b3-a502-a1dfcf1f2028";
+
+function getToken() { return localStorage.getItem("nexus_token") || ""; }
+
+async function apiPost(url: string, body: Record<string, unknown>) {
+  const res = await fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "X-Auth-Token": getToken() },
+    body: JSON.stringify(body),
+  });
+  const text = await res.text();
+  let json: Record<string, unknown> = {};
+  try { json = JSON.parse(text); } catch { /* ignore */ }
+  if (typeof json === "string") { try { json = JSON.parse(json as string); } catch { /* ignore */ } }
+  return { ok: res.ok, data: json };
+}
+
+async function apiGet(url: string, params: Record<string, string> = {}) {
+  const qs = new URLSearchParams(params).toString();
+  const res = await fetch(qs ? `${url}?${qs}` : url, {
+    headers: { "X-Auth-Token": getToken() },
+  });
+  const text = await res.text();
+  let json: Record<string, unknown> = {};
+  try { json = JSON.parse(text); } catch { /* ignore */ }
+  if (typeof json === "string") { try { json = JSON.parse(json as string); } catch { /* ignore */ } }
+  return { ok: res.ok, data: json };
+}
+
+interface Comment {
+  id: number;
+  text: string;
+  created_at: string;
+  author: PostAuthor;
+}
+
+interface Notification {
+  id: number;
+  type: string;
+  is_read: boolean;
+  created_at: string;
+  actor_name: string;
+  actor_title: string;
+  post_preview: string | null;
+  label: string;
+  icon: string;
+  color: string;
+}
+
+interface SocialUser {
+  id: number;
+  full_name: string;
+  job_title: string;
+  initials: string;
+  is_following: boolean;
+}
 
 interface PostAuthor {
   id: number;
@@ -190,12 +246,12 @@ function AuthScreen({ onAuth }: { onAuth: (user: User, token: string) => void })
 
 type Section = "feed" | "friends" | "notifications" | "search" | "messages" | "profile";
 
-const navItems: { id: Section; label: string; icon: string; badge?: number }[] = [
+const navItems: { id: Section; label: string; icon: string }[] = [
   { id: "feed", label: "Главная", icon: "LayoutDashboard" },
-  { id: "friends", label: "Контакты", icon: "Users", badge: 3 },
-  { id: "notifications", label: "Уведомления", icon: "Bell", badge: 7 },
+  { id: "friends", label: "Контакты", icon: "Users" },
+  { id: "notifications", label: "Уведомления", icon: "Bell" },
   { id: "search", label: "Поиск", icon: "Search" },
-  { id: "messages", label: "Сообщения", icon: "MessageSquare", badge: 2 },
+  { id: "messages", label: "Сообщения", icon: "MessageSquare" },
   { id: "profile", label: "Профиль", icon: "User" },
 ];
 
@@ -338,6 +394,110 @@ function CreatePostModal({ userInitials, onClose, onCreated }: { userInitials: s
   );
 }
 
+function PostCard({ post, onLike, onCommentAdded, userInitials }: {
+  post: Post;
+  onLike: (id: number) => void;
+  onCommentAdded: (id: number) => void;
+  userInitials: string;
+}) {
+  const [showComments, setShowComments] = useState(false);
+  const [comments, setComments] = useState<Comment[]>([]);
+  const [loadingComments, setLoadingComments] = useState(false);
+  const [commentText, setCommentText] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+
+  const toggleComments = async () => {
+    if (!showComments && comments.length === 0) {
+      setLoadingComments(true);
+      const r = await apiPost(POSTS_URL, { action: "get_comments", post_id: post.id });
+      setComments((r.data.comments as Comment[]) || []);
+      setLoadingComments(false);
+    }
+    setShowComments((v) => !v);
+  };
+
+  const submitComment = async () => {
+    if (!commentText.trim()) return;
+    setSubmitting(true);
+    const r = await apiPost(POSTS_URL, { action: "add_comment", post_id: post.id, text: commentText.trim() });
+    setSubmitting(false);
+    if (r.ok && r.data.comment) {
+      setComments((prev) => [...prev, r.data.comment as Comment]);
+      setCommentText("");
+      onCommentAdded(post.id);
+    }
+  };
+
+  return (
+    <div className="post-card">
+      <div className="flex items-start gap-3">
+        <Avatar initials={post.author.initials} />
+        <div className="flex-1 min-w-0">
+          <div className="font-semibold text-sm">{post.author.full_name}</div>
+          <div className="text-xs mt-0.5" style={{ color: "hsl(220,15%,55%)" }}>{post.author.job_title}</div>
+          <div className="text-xs mt-0.5" style={{ color: "hsl(220,15%,65%)" }}>{timeAgo(post.created_at)}</div>
+        </div>
+      </div>
+      <p className="mt-3 text-sm leading-relaxed whitespace-pre-wrap" style={{ color: "hsl(220,25%,20%)" }}>{post.text}</p>
+      {post.tags.length > 0 && (
+        <div className="flex flex-wrap gap-1.5 mt-3">
+          {post.tags.map((tag) => <span key={tag} className="stat-badge">#{tag}</span>)}
+        </div>
+      )}
+      <div className="flex items-center justify-between mt-4 pt-3 border-t text-xs" style={{ borderColor: "hsl(216,20%,90%)", color: "hsl(220,15%,55%)" }}>
+        <span className="flex items-center gap-1"><Icon name="Eye" size={13} />{post.views_count.toLocaleString("ru")} просмотров</span>
+        <div className="flex items-center gap-4">
+          <button className="flex items-center gap-1.5 transition-colors" onClick={() => onLike(post.id)} style={{ color: post.liked ? "hsl(0,72%,51%)" : "hsl(220,15%,55%)" }}>
+            <Icon name="Heart" size={14} />{post.likes_count}
+          </button>
+          <button className="flex items-center gap-1.5 transition-colors hover:text-blue-600" onClick={toggleComments} style={{ color: showComments ? "hsl(213,80%,40%)" : "hsl(220,15%,55%)" }}>
+            <Icon name="MessageCircle" size={14} />{post.comments_count}
+          </button>
+          <button className="flex items-center gap-1.5 hover:text-blue-600 transition-colors">
+            <Icon name="Share2" size={14} />Поделиться
+          </button>
+        </div>
+      </div>
+
+      {/* Comments section */}
+      {showComments && (
+        <div className="mt-3 pt-3 border-t space-y-3" style={{ borderColor: "hsl(216,20%,92%)" }}>
+          {loadingComments && <div className="h-8 rounded shimmer" />}
+          {comments.map((c) => (
+            <div key={c.id} className="flex items-start gap-2">
+              <Avatar initials={c.author.initials} size="sm" />
+              <div className="flex-1 px-3 py-2 rounded-lg" style={{ background: "hsl(216,20%,96%)" }}>
+                <div className="flex items-baseline gap-2">
+                  <span className="font-medium text-xs">{c.author.full_name}</span>
+                  <span className="text-xs" style={{ color: "hsl(220,15%,62%)" }}>{timeAgo(c.created_at)}</span>
+                </div>
+                <p className="text-sm mt-0.5" style={{ color: "hsl(220,25%,22%)" }}>{c.text}</p>
+              </div>
+            </div>
+          ))}
+          {!loadingComments && comments.length === 0 && (
+            <p className="text-xs text-center py-2" style={{ color: "hsl(220,15%,62%)" }}>Будьте первым — оставьте комментарий</p>
+          )}
+          <div className="flex items-center gap-2">
+            <Avatar initials={userInitials} size="sm" />
+            <input
+              className="flex-1 px-3 py-1.5 rounded-full border text-sm outline-none focus:border-blue-400 transition-all"
+              style={{ borderColor: "hsl(216,20%,85%)", color: "hsl(220,30%,15%)" }}
+              placeholder="Написать комментарий..."
+              value={commentText}
+              onChange={(e) => setCommentText(e.target.value)}
+              onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); submitComment(); } }}
+            />
+            <button className="btn-primary p-2 rounded-full" onClick={submitComment} disabled={submitting || !commentText.trim()}>
+              <Icon name="Send" size={13} />
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function FeedPage({ currentUser }: { currentUser: User | null }) {
   const [feedPosts, setFeedPosts] = useState<Post[]>([]);
   const [loading, setLoading] = useState(true);
@@ -345,56 +505,36 @@ function FeedPage({ currentUser }: { currentUser: User | null }) {
   const userInitials = currentUser ? getInitials(currentUser.full_name) : "?";
 
   useEffect(() => {
-    const token = localStorage.getItem("nexus_token") || "";
-    fetch(POSTS_URL, { headers: { "X-Auth-Token": token } })
-      .then((r) => r.text())
-      .then((raw) => {
-        let json: Record<string, unknown> = {};
-        try { json = JSON.parse(raw); } catch { /* ignore */ }
-        if (typeof json === "string") { try { json = JSON.parse(json as string); } catch { /* ignore */ } }
-        setFeedPosts((json.posts as Post[]) || []);
-      })
-      .finally(() => setLoading(false));
+    apiGet(POSTS_URL).then((r) => {
+      setFeedPosts((r.data.posts as Post[]) || []);
+      setLoading(false);
+    });
   }, []);
 
   const handleLike = async (postId: number) => {
-    const token = localStorage.getItem("nexus_token") || "";
-    const res = await fetch(POSTS_URL, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "X-Auth-Token": token },
-      body: JSON.stringify({ action: "like", post_id: postId }),
-    });
-    const raw = await res.text();
-    let json: Record<string, unknown> = {};
-    try { json = JSON.parse(raw); } catch { /* ignore */ }
-    if (typeof json === "string") { try { json = JSON.parse(json as string); } catch { /* ignore */ } }
-    if (res.ok) {
+    const r = await apiPost(POSTS_URL, { action: "like", post_id: postId });
+    if (r.ok) {
       setFeedPosts((prev) => prev.map((p) => p.id === postId
-        ? { ...p, liked: json.liked as boolean, likes_count: json.likes_count as number }
+        ? { ...p, liked: r.data.liked as boolean, likes_count: r.data.likes_count as number }
         : p
       ));
     }
   };
 
+  const handleCommentAdded = (postId: number) => {
+    setFeedPosts((prev) => prev.map((p) => p.id === postId ? { ...p, comments_count: p.comments_count + 1 } : p));
+  };
+
   return (
     <div className="max-w-2xl mx-auto px-4 py-5 space-y-4">
       {showCreate && currentUser && (
-        <CreatePostModal
-          userInitials={userInitials}
-          onClose={() => setShowCreate(false)}
-          onCreated={(p) => setFeedPosts((prev) => [p, ...prev])}
-        />
+        <CreatePostModal userInitials={userInitials} onClose={() => setShowCreate(false)} onCreated={(p) => { setFeedPosts((prev) => [p, ...prev]); }} />
       )}
 
-      {/* Compose trigger */}
       <div className="post-card">
         <div className="flex items-center gap-3">
           <Avatar initials={userInitials} />
-          <button
-            className="flex-1 text-left px-4 py-2.5 rounded-full border text-sm transition-colors hover:border-blue-400"
-            style={{ borderColor: "hsl(216,20%,85%)", color: "hsl(220,15%,55%)" }}
-            onClick={() => setShowCreate(true)}
-          >
+          <button className="flex-1 text-left px-4 py-2.5 rounded-full border text-sm transition-colors hover:border-blue-400" style={{ borderColor: "hsl(216,20%,85%)", color: "hsl(220,15%,55%)" }} onClick={() => setShowCreate(true)}>
             Поделитесь профессиональными новостями...
           </button>
         </div>
@@ -405,26 +545,20 @@ function FeedPage({ currentUser }: { currentUser: User | null }) {
         </div>
       </div>
 
-      {/* Loading */}
       {loading && (
         <div className="space-y-3">
           {[1, 2].map((i) => (
             <div key={i} className="post-card space-y-3">
               <div className="flex items-center gap-3">
                 <div className="w-10 h-10 rounded-full shimmer" />
-                <div className="flex-1 space-y-2">
-                  <div className="h-3 rounded shimmer w-1/3" />
-                  <div className="h-2.5 rounded shimmer w-1/2" />
-                </div>
+                <div className="flex-1 space-y-2"><div className="h-3 rounded shimmer w-1/3" /><div className="h-2.5 rounded shimmer w-1/2" /></div>
               </div>
-              <div className="h-3 rounded shimmer" />
-              <div className="h-3 rounded shimmer w-4/5" />
+              <div className="h-3 rounded shimmer" /><div className="h-3 rounded shimmer w-4/5" />
             </div>
           ))}
         </div>
       )}
 
-      {/* Empty */}
       {!loading && feedPosts.length === 0 && (
         <div className="post-card text-center py-12" style={{ color: "hsl(220,15%,55%)" }}>
           <Icon name="Newspaper" size={36} className="mx-auto mb-3 opacity-30" />
@@ -434,114 +568,133 @@ function FeedPage({ currentUser }: { currentUser: User | null }) {
         </div>
       )}
 
-      {/* Posts */}
       {feedPosts.map((post) => (
-        <div key={post.id} className="post-card">
-          <div className="flex items-start gap-3">
-            <Avatar initials={post.author.initials} />
-            <div className="flex-1 min-w-0">
-              <div className="font-semibold text-sm">{post.author.full_name}</div>
-              <div className="text-xs mt-0.5" style={{ color: "hsl(220,15%,55%)" }}>{post.author.job_title}</div>
-              <div className="text-xs mt-0.5" style={{ color: "hsl(220,15%,65%)" }}>{timeAgo(post.created_at)}</div>
-            </div>
-          </div>
-          <p className="mt-3 text-sm leading-relaxed whitespace-pre-wrap" style={{ color: "hsl(220,25%,20%)" }}>{post.text}</p>
-          {post.tags.length > 0 && (
-            <div className="flex flex-wrap gap-1.5 mt-3">
-              {post.tags.map((tag) => <span key={tag} className="stat-badge">#{tag}</span>)}
-            </div>
-          )}
-          <div className="flex items-center justify-between mt-4 pt-3 border-t text-xs" style={{ borderColor: "hsl(216,20%,90%)", color: "hsl(220,15%,55%)" }}>
-            <span className="flex items-center gap-1"><Icon name="Eye" size={13} />{post.views_count.toLocaleString("ru")} просмотров</span>
-            <div className="flex items-center gap-4">
-              <button
-                className="flex items-center gap-1.5 transition-colors"
-                onClick={() => handleLike(post.id)}
-                style={{ color: post.liked ? "hsl(0,72%,51%)" : "hsl(220,15%,55%)" }}
-              >
-                <Icon name="Heart" size={14} />
-                {post.likes_count}
-              </button>
-              <button className="flex items-center gap-1.5 hover:text-blue-600 transition-colors">
-                <Icon name="MessageCircle" size={14} />{post.comments_count}
-              </button>
-              <button className="flex items-center gap-1.5 hover:text-blue-600 transition-colors">
-                <Icon name="Share2" size={14} />Поделиться
-              </button>
-            </div>
-          </div>
-        </div>
+        <PostCard key={post.id} post={post} onLike={handleLike} onCommentAdded={handleCommentAdded} userInitials={userInitials} />
       ))}
     </div>
   );
 }
 
 function FriendsPage() {
-  const [followed, setFollowed] = useState<Record<string, boolean>>({});
+  const [users, setUsers] = useState<SocialUser[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    apiPost(SOCIAL_URL, { action: "search_users", q: "" }).then((r) => {
+      setUsers((r.data.users as SocialUser[]) || []);
+      setLoading(false);
+    });
+  }, []);
+
+  const toggleFollow = async (u: SocialUser) => {
+    const action = u.is_following ? "unfollow" : "follow";
+    const r = await apiPost(SOCIAL_URL, { action, user_id: u.id });
+    if (r.ok) setUsers((prev) => prev.map((p) => p.id === u.id ? { ...p, is_following: !p.is_following } : p));
+  };
+
+  const following = users.filter((u) => u.is_following);
+  const suggestions = users.filter((u) => !u.is_following);
+
   return (
     <div className="max-w-3xl mx-auto px-4 py-5 space-y-6">
-      <div>
-        <h2 className="font-semibold text-xs uppercase tracking-wider mb-3" style={{ color: "hsl(220,15%,50%)" }}>Мои контакты</h2>
-        <div className="grid grid-cols-2 gap-3">
-          {contacts.map((c) => (
-            <div key={c.name} className="post-card flex items-center gap-3">
-              <div className="relative">
-                <Avatar initials={c.avatar} />
-                {c.online && <span className="absolute bottom-0 right-0 w-3 h-3 rounded-full border-2 border-card" style={{ background: "hsl(142,70%,42%)" }} />}
+      {loading && (
+        <div className="space-y-2">{[1, 2, 3, 4].map((i) => <div key={i} className="h-16 rounded-lg shimmer" />)}</div>
+      )}
+
+      {!loading && following.length > 0 && (
+        <div>
+          <h2 className="font-semibold text-xs uppercase tracking-wider mb-3" style={{ color: "hsl(220,15%,50%)" }}>Мои подписки</h2>
+          <div className="grid grid-cols-2 gap-3">
+            {following.map((u) => (
+              <div key={u.id} className="post-card flex items-center gap-3">
+                <Avatar initials={u.initials} />
+                <div className="flex-1 min-w-0">
+                  <div className="font-medium text-sm truncate">{u.full_name}</div>
+                  <div className="text-xs truncate" style={{ color: "hsl(220,15%,55%)" }}>{u.job_title || "Участник"}</div>
+                </div>
+                <button className="btn-outline text-xs p-2" onClick={() => toggleFollow(u)} title="Отписаться">
+                  <Icon name="UserMinus" size={13} />
+                </button>
               </div>
-              <div className="flex-1 min-w-0">
-                <div className="font-medium text-sm truncate">{c.name}</div>
-                <div className="text-xs truncate" style={{ color: "hsl(220,15%,55%)" }}>{c.role}</div>
-                <div className="text-xs mt-0.5" style={{ color: "hsl(220,15%,65%)" }}>{c.mutual} общих</div>
-              </div>
-              <button className="btn-outline text-xs p-2"><Icon name="MessageSquare" size={13} /></button>
-            </div>
-          ))}
+            ))}
+          </div>
         </div>
-      </div>
-      <div>
-        <h2 className="font-semibold text-xs uppercase tracking-wider mb-3" style={{ color: "hsl(220,15%,50%)" }}>Рекомендации</h2>
-        <div className="space-y-2">
-          {recommended.map((r) => (
-            <div key={r.name} className="post-card flex items-center gap-4">
-              <Avatar initials={r.avatar} />
-              <div className="flex-1 min-w-0">
-                <div className="font-medium text-sm">{r.name}</div>
-                <div className="text-xs" style={{ color: "hsl(220,15%,55%)" }}>{r.role}</div>
-                <div className="text-xs mt-0.5" style={{ color: "hsl(220,15%,65%)" }}>{r.mutual} общих контакта</div>
+      )}
+
+      {!loading && suggestions.length > 0 && (
+        <div>
+          <h2 className="font-semibold text-xs uppercase tracking-wider mb-3" style={{ color: "hsl(220,15%,50%)" }}>
+            {following.length > 0 ? "Рекомендации" : "Участники сети"}
+          </h2>
+          <div className="space-y-2">
+            {suggestions.map((u) => (
+              <div key={u.id} className="post-card flex items-center gap-4">
+                <Avatar initials={u.initials} />
+                <div className="flex-1 min-w-0">
+                  <div className="font-medium text-sm">{u.full_name}</div>
+                  <div className="text-xs" style={{ color: "hsl(220,15%,55%)" }}>{u.job_title || "Участник сети"}</div>
+                </div>
+                <button className="btn-primary text-xs px-4 py-1.5" onClick={() => toggleFollow(u)}>
+                  + Подписаться
+                </button>
               </div>
-              <button
-                className={followed[r.name] ? "btn-outline text-xs px-4 py-1.5" : "btn-primary text-xs px-4 py-1.5"}
-                onClick={() => setFollowed((p) => ({ ...p, [r.name]: !p[r.name] }))}
-              >
-                {followed[r.name] ? "Подписан" : "+ Подписаться"}
-              </button>
-            </div>
-          ))}
+            ))}
+          </div>
         </div>
-      </div>
+      )}
+
+      {!loading && users.length === 0 && (
+        <div className="text-center py-12" style={{ color: "hsl(220,15%,55%)" }}>
+          <Icon name="Users" size={36} className="mx-auto mb-3 opacity-30" />
+          <div className="text-sm">Других пользователей пока нет</div>
+          <div className="text-xs mt-1">Пригласите коллег зарегистрироваться</div>
+        </div>
+      )}
     </div>
   );
 }
 
 function NotificationsPage() {
+  const [notifs, setNotifs] = useState<Notification[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    apiPost(SOCIAL_URL, { action: "get_notifications" }).then((r) => {
+      setNotifs((r.data.notifications as Notification[]) || []);
+      setLoading(false);
+    });
+  }, []);
+
+  if (loading) return (
+    <div className="max-w-2xl mx-auto px-4 py-5 space-y-2">
+      {[1, 2, 3].map((i) => <div key={i} className="h-16 rounded-lg shimmer" />)}
+    </div>
+  );
+
+  if (notifs.length === 0) return (
+    <div className="max-w-2xl mx-auto px-4 py-12 text-center" style={{ color: "hsl(220,15%,55%)" }}>
+      <Icon name="Bell" size={36} className="mx-auto mb-3 opacity-30" />
+      <div className="text-sm font-medium">Уведомлений пока нет</div>
+      <div className="text-xs mt-1">Здесь появятся лайки, комментарии и подписки</div>
+    </div>
+  );
+
   return (
     <div className="max-w-2xl mx-auto px-4 py-5">
       <div className="space-y-1">
-        {notifications.map((n, i) => (
-          <div
-            key={n.id}
-            className={`flex items-start gap-4 px-4 py-3.5 rounded-lg cursor-pointer transition-colors hover:bg-muted ${i < 3 ? "bg-card border border-border" : ""}`}
-          >
+        {notifs.map((n) => (
+          <div key={n.id} className={`flex items-start gap-4 px-4 py-3.5 rounded-lg cursor-pointer transition-colors hover:bg-muted ${!n.is_read ? "bg-card border border-border" : ""}`}>
             <div className="w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0" style={{ background: `${n.color}18` }}>
               <Icon name={n.icon} size={18} style={{ color: n.color }} />
             </div>
             <div className="flex-1 min-w-0">
-              <div className="text-sm font-medium" style={{ color: "hsl(220,30%,15%)" }}>{n.text}</div>
-              {n.sub && <div className="text-xs mt-0.5 truncate" style={{ color: "hsl(220,15%,55%)" }}>{n.sub}</div>}
+              <div className="text-sm font-medium" style={{ color: "hsl(220,30%,15%)" }}>
+                <span className="font-semibold">{n.actor_name}</span> {n.label}
+              </div>
+              {n.post_preview && <div className="text-xs mt-0.5 truncate" style={{ color: "hsl(220,15%,55%)" }}>«{n.post_preview}»</div>}
+              <div className="text-xs mt-0.5" style={{ color: "hsl(220,15%,65%)" }}>{timeAgo(n.created_at)}</div>
             </div>
-            <div className="text-xs flex-shrink-0 mt-0.5" style={{ color: "hsl(220,15%,60%)" }}>{n.time}</div>
-            {i < 3 && <div className="w-2 h-2 rounded-full flex-shrink-0 mt-1.5" style={{ background: "hsl(213,80%,40%)" }} />}
+            {!n.is_read && <div className="w-2 h-2 rounded-full flex-shrink-0 mt-1.5" style={{ background: "hsl(213,80%,40%)" }} />}
           </div>
         ))}
       </div>
@@ -551,11 +704,32 @@ function NotificationsPage() {
 
 function SearchPage() {
   const [query, setQuery] = useState("");
-  const [tab, setTab] = useState<"people" | "posts" | "groups">("people");
-  const allPeople = [...contacts, ...recommended.map((r) => ({ ...r, online: false }))];
-  const filtered = query
-    ? allPeople.filter((p) => p.name.toLowerCase().includes(query.toLowerCase()) || p.role.toLowerCase().includes(query.toLowerCase()))
-    : allPeople;
+  const [users, setUsers] = useState<SocialUser[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [tab, setTab] = useState<"people" | "groups">("people");
+
+  useEffect(() => {
+    apiGet(SOCIAL_URL, query ? { action: "search_users", q: query } : { action: "search_users" }).then((r) => {
+      setUsers((r.data.users as SocialUser[]) || []);
+      setLoading(false);
+    });
+  }, []);
+
+  const handleSearch = async (q: string) => {
+    setQuery(q);
+    setLoading(true);
+    const r = await apiPost(SOCIAL_URL, { action: "search_users", q });
+    setUsers((r.data.users as SocialUser[]) || []);
+    setLoading(false);
+  };
+
+  const toggleFollow = async (u: SocialUser) => {
+    const action = u.is_following ? "unfollow" : "follow";
+    const r = await apiPost(SOCIAL_URL, { action, user_id: u.id });
+    if (r.ok) {
+      setUsers((prev) => prev.map((p) => p.id === u.id ? { ...p, is_following: !p.is_following } : p));
+    }
+  };
 
   return (
     <div className="max-w-2xl mx-auto px-4 py-5">
@@ -564,44 +738,43 @@ function SearchPage() {
         <input
           className="w-full pl-10 pr-4 py-2.5 rounded-lg border text-sm outline-none focus:border-blue-400 transition-all bg-card"
           style={{ borderColor: "hsl(216,20%,85%)", color: "hsl(220,30%,15%)" }}
-          placeholder="Поиск людей, постов, групп..."
+          placeholder="Поиск людей по имени или должности..."
           value={query}
-          onChange={(e) => setQuery(e.target.value)}
+          onChange={(e) => handleSearch(e.target.value)}
         />
       </div>
       <div className="flex gap-2 mb-4">
-        {(["people", "posts", "groups"] as const).map((t) => (
+        {(["people", "groups"] as const).map((t) => (
           <button key={t} onClick={() => setTab(t)} className={tab === t ? "btn-primary text-xs px-4 py-1.5" : "btn-outline text-xs px-4 py-1.5"}>
-            {{ people: "Люди", posts: "Посты", groups: "Группы" }[t]}
+            {{ people: "Люди", groups: "Группы" }[t]}
           </button>
         ))}
       </div>
 
       {tab === "people" && (
         <div className="space-y-2">
-          {filtered.map((p) => (
-            <div key={p.name} className="post-card flex items-center gap-3">
-              <Avatar initials={p.avatar} />
+          {loading && [1, 2, 3].map((i) => <div key={i} className="h-16 rounded-lg shimmer" />)}
+          {!loading && users.map((u) => (
+            <div key={u.id} className="post-card flex items-center gap-3">
+              <Avatar initials={u.initials} />
               <div className="flex-1">
-                <div className="font-medium text-sm">{p.name}</div>
-                <div className="text-xs" style={{ color: "hsl(220,15%,55%)" }}>{p.role}</div>
+                <div className="font-medium text-sm">{u.full_name}</div>
+                <div className="text-xs" style={{ color: "hsl(220,15%,55%)" }}>{u.job_title || "Участник сети"}</div>
               </div>
-              <button className="btn-primary text-xs px-3 py-1.5">+ Подписаться</button>
+              <button
+                className={u.is_following ? "btn-outline text-xs px-3 py-1.5" : "btn-primary text-xs px-3 py-1.5"}
+                onClick={() => toggleFollow(u)}
+              >
+                {u.is_following ? "Подписан" : "+ Подписаться"}
+              </button>
             </div>
           ))}
-          {filtered.length === 0 && (
+          {!loading && users.length === 0 && (
             <div className="text-center py-12" style={{ color: "hsl(220,15%,55%)" }}>
               <Icon name="SearchX" size={32} className="mx-auto mb-3 opacity-40" />
               <div className="text-sm">Ничего не найдено</div>
             </div>
           )}
-        </div>
-      )}
-
-      {tab === "posts" && (
-        <div className="post-card text-center py-10" style={{ color: "hsl(220,15%,60%)" }}>
-          <Icon name="Search" size={28} className="mx-auto mb-2 opacity-30" />
-          <div className="text-sm">Поиск по постам будет доступен скоро</div>
         </div>
       )}
 
@@ -949,6 +1122,7 @@ export default function Index() {
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [authChecked, setAuthChecked] = useState(false);
   const [showCreatePost, setShowCreatePost] = useState(false);
+  const [unreadCount, setUnreadCount] = useState(0);
 
   useEffect(() => {
     const token = localStorage.getItem("nexus_token");
@@ -958,6 +1132,19 @@ export default function Index() {
     }
     setAuthChecked(true);
   }, []);
+
+  // Подтягиваем счётчик непрочитанных уведомлений
+  useEffect(() => {
+    if (!currentUser) return;
+    const fetchCount = () => {
+      apiPost(SOCIAL_URL, { action: "unread_count" }).then((r) => {
+        setUnreadCount((r.data.count as number) || 0);
+      });
+    };
+    fetchCount();
+    const interval = setInterval(fetchCount, 30000);
+    return () => clearInterval(interval);
+  }, [currentUser]);
 
   const handleAuth = (user: User, _token: string) => {
     setCurrentUser(user);
@@ -1012,19 +1199,19 @@ export default function Index() {
           {navItems.map((item) => (
             <button
               key={item.id}
-              onClick={() => setActive(item.id)}
+              onClick={() => { setActive(item.id); if (item.id === "notifications") setUnreadCount(0); }}
               className={`nav-item w-full text-left ${active === item.id ? "active" : ""}`}
             >
               <div className="relative flex-shrink-0">
                 <Icon name={item.icon} size={17} />
-                {item.badge && active !== item.id && (
-                  <span className="notification-dot">{item.badge > 9 ? "9+" : item.badge}</span>
+                {item.id === "notifications" && unreadCount > 0 && active !== "notifications" && (
+                  <span className="notification-dot">{unreadCount > 9 ? "9+" : unreadCount}</span>
                 )}
               </div>
               <span className="flex-1">{item.label}</span>
-              {item.badge && active === item.id && (
+              {item.id === "notifications" && unreadCount > 0 && active === "notifications" && (
                 <span className="text-xs font-bold px-1.5 py-0.5 rounded" style={{ background: "rgba(255,255,255,0.2)", color: "white" }}>
-                  {item.badge}
+                  {unreadCount}
                 </span>
               )}
             </button>
@@ -1064,10 +1251,12 @@ export default function Index() {
             <button
               className="relative w-8 h-8 flex items-center justify-center rounded-md hover:bg-muted transition-colors"
               style={{ color: "hsl(220,15%,50%)" }}
-              onClick={() => setActive("notifications")}
+              onClick={() => { setActive("notifications"); setUnreadCount(0); }}
             >
               <Icon name="Bell" size={16} />
-              <span className="notification-dot">7</span>
+              {unreadCount > 0 && (
+                <span className="notification-dot">{unreadCount > 9 ? "9+" : unreadCount}</span>
+              )}
             </button>
           </div>
         </header>

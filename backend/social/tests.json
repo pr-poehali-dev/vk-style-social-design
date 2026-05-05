@@ -1,0 +1,28 @@
+{
+  "tests": [
+    {
+      "name": "Search users no auth",
+      "method": "GET",
+      "path": "/",
+      "expectedStatus": 200,
+      "expectedBody": {"users": []},
+      "bodyMatcher": "partial"
+    },
+    {
+      "name": "Follow without token",
+      "method": "POST",
+      "path": "/",
+      "body": {"action": "follow", "user_id": 1},
+      "expectedStatus": 401,
+      "bodyMatcher": "partial"
+    },
+    {
+      "name": "Notifications without token",
+      "method": "POST",
+      "path": "/",
+      "body": {"action": "get_notifications"},
+      "expectedStatus": 401,
+      "bodyMatcher": "partial"
+    }
+  ]
+}
