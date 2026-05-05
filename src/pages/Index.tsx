@@ -1,5 +1,164 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import Icon from "@/components/ui/icon";
+
+const AUTH_URL = "https://functions.poehali.dev/e7256c2b-25ee-4d8d-a177-79b9ba10f5b5";
+
+interface User {
+  id: number;
+  email: string;
+  full_name: string;
+  job_title: string;
+  bio: string;
+}
+
+async function apiAuth(action: string, data: Record<string, string>) {
+  const res = await fetch(AUTH_URL, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ action, ...data }),
+  });
+  const text = await res.text();
+  let json: Record<string, unknown>;
+  try { json = JSON.parse(text); } catch { json = {}; }
+  if (typeof json === "string") {
+    try { json = JSON.parse(json as string); } catch { json = {}; }
+  }
+  return { ok: res.ok, status: res.status, data: json };
+}
+
+function AuthScreen({ onAuth }: { onAuth: (user: User, token: string) => void }) {
+  const [mode, setMode] = useState<"login" | "register">("login");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [fullName, setFullName] = useState("");
+  const [jobTitle, setJobTitle] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError("");
+    setLoading(true);
+    const result = await apiAuth(mode, { email, password, full_name: fullName, job_title: jobTitle });
+    setLoading(false);
+    if (!result.ok) {
+      setError(result.data?.error || "Произошла ошибка");
+      return;
+    }
+    const token = result.data?.token;
+    const user = result.data?.user;
+    if (token && user) {
+      localStorage.setItem("nexus_token", token);
+      localStorage.setItem("nexus_user", JSON.stringify(user));
+      onAuth(user, token);
+    }
+  };
+
+  return (
+    <div className="min-h-screen flex items-center justify-center" style={{ background: "hsl(221,35%,12%)" }}>
+      <div className="w-full max-w-md px-4">
+        <div className="text-center mb-8">
+          <div className="inline-flex items-center justify-center w-12 h-12 rounded-lg mb-4" style={{ background: "hsl(213,80%,42%)" }}>
+            <span className="text-white font-bold text-lg font-mono-ibm">N</span>
+          </div>
+          <h1 className="text-white font-semibold tracking-widest text-xl">NEXUS</h1>
+          <p className="text-sm mt-1" style={{ color: "hsl(214,25%,55%)" }}>Деловая профессиональная сеть</p>
+        </div>
+
+        <div className="rounded-xl p-8" style={{ background: "hsl(221,30%,16%)", border: "1px solid hsl(221,25%,22%)" }}>
+          <div className="flex rounded-lg mb-6 p-1" style={{ background: "hsl(221,35%,10%)" }}>
+            {(["login", "register"] as const).map((m) => (
+              <button
+                key={m}
+                onClick={() => { setMode(m); setError(""); }}
+                className="flex-1 py-2 rounded-md text-sm font-medium transition-all"
+                style={mode === m
+                  ? { background: "hsl(213,80%,40%)", color: "white" }
+                  : { color: "hsl(214,25%,55%)" }
+                }
+              >
+                {m === "login" ? "Вход" : "Регистрация"}
+              </button>
+            ))}
+          </div>
+
+          <form onSubmit={handleSubmit} className="space-y-4">
+            {mode === "register" && (
+              <>
+                <div>
+                  <label className="block text-xs font-medium mb-1.5" style={{ color: "hsl(214,25%,65%)" }}>Имя и фамилия *</label>
+                  <input
+                    className="w-full px-3.5 py-2.5 rounded-lg text-sm outline-none transition-all"
+                    style={{ background: "hsl(221,35%,10%)", border: "1px solid hsl(221,25%,25%)", color: "hsl(214,30%,90%)" }}
+                    placeholder="Андрей Козлов"
+                    value={fullName}
+                    onChange={(e) => setFullName(e.target.value)}
+                    required
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium mb-1.5" style={{ color: "hsl(214,25%,65%)" }}>Должность</label>
+                  <input
+                    className="w-full px-3.5 py-2.5 rounded-lg text-sm outline-none transition-all"
+                    style={{ background: "hsl(221,35%,10%)", border: "1px solid hsl(221,25%,25%)", color: "hsl(214,30%,90%)" }}
+                    placeholder="Директор по развитию"
+                    value={jobTitle}
+                    onChange={(e) => setJobTitle(e.target.value)}
+                  />
+                </div>
+              </>
+            )}
+
+            <div>
+              <label className="block text-xs font-medium mb-1.5" style={{ color: "hsl(214,25%,65%)" }}>Email *</label>
+              <input
+                type="email"
+                className="w-full px-3.5 py-2.5 rounded-lg text-sm outline-none transition-all"
+                style={{ background: "hsl(221,35%,10%)", border: "1px solid hsl(221,25%,25%)", color: "hsl(214,30%,90%)" }}
+                placeholder="email@company.ru"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                required
+              />
+            </div>
+
+            <div>
+              <label className="block text-xs font-medium mb-1.5" style={{ color: "hsl(214,25%,65%)" }}>Пароль *</label>
+              <input
+                type="password"
+                className="w-full px-3.5 py-2.5 rounded-lg text-sm outline-none transition-all"
+                style={{ background: "hsl(221,35%,10%)", border: "1px solid hsl(221,25%,25%)", color: "hsl(214,30%,90%)" }}
+                placeholder={mode === "register" ? "Минимум 6 символов" : "Введите пароль"}
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                required
+              />
+            </div>
+
+            {error && (
+              <div className="px-3.5 py-2.5 rounded-lg text-sm" style={{ background: "hsl(0,60%,18%)", color: "hsl(0,80%,75%)", border: "1px solid hsl(0,60%,28%)" }}>
+                {error}
+              </div>
+            )}
+
+            <button
+              type="submit"
+              disabled={loading}
+              className="w-full py-2.5 rounded-lg text-sm font-semibold transition-all mt-2"
+              style={{ background: loading ? "hsl(213,60%,32%)" : "hsl(213,80%,40%)", color: "white", cursor: loading ? "not-allowed" : "pointer" }}
+            >
+              {loading ? "Подождите..." : mode === "login" ? "Войти" : "Создать аккаунт"}
+            </button>
+          </form>
+        </div>
+
+        <p className="text-center text-xs mt-4" style={{ color: "hsl(214,25%,40%)" }}>
+          Nexus © 2026 · Деловая профессиональная сеть
+        </p>
+      </div>
+    </div>
+  );
+}
 
 type Section = "feed" | "friends" | "notifications" | "search" | "messages" | "profile";
 
@@ -438,7 +597,10 @@ function MessagesPage() {
   );
 }
 
-function ProfilePage() {
+function ProfilePage({ user }: { user?: User }) {
+  const displayName = user?.full_name || "Андрей Козлов";
+  const displayTitle = user?.job_title || "Директор по развитию бизнеса";
+  const displayInitials = getInitials(displayName);
   const stats = [
     { label: "Подписчиков", value: "1 284" },
     { label: "Подписок", value: "347" },
@@ -458,11 +620,11 @@ function ProfilePage() {
             className="w-16 h-16 rounded-full border-4 border-card flex items-center justify-center text-base font-bold text-white flex-shrink-0"
             style={{ background: "hsl(213,80%,40%)" }}
           >
-            АК
+            {displayInitials}
           </div>
           <div className="pb-1 flex-1">
-            <h1 className="font-bold text-lg">Андрей Козлов</h1>
-            <p className="text-sm" style={{ color: "hsl(220,15%,50%)" }}>Директор по развитию бизнеса · Москва</p>
+            <h1 className="font-bold text-lg">{displayName}</h1>
+            <p className="text-sm" style={{ color: "hsl(220,15%,50%)" }}>{displayTitle} · Москва</p>
           </div>
           <div className="pb-1 flex gap-2">
             <button className="btn-primary text-xs px-4 py-2">Редактировать</button>
@@ -531,8 +693,46 @@ function ProfilePage() {
   );
 }
 
+function getInitials(name: string) {
+  return name.split(" ").map((w) => w[0]).join("").slice(0, 2).toUpperCase();
+}
+
 export default function Index() {
   const [active, setActive] = useState<Section>("feed");
+  const [currentUser, setCurrentUser] = useState<User | null>(null);
+  const [authChecked, setAuthChecked] = useState(false);
+
+  useEffect(() => {
+    const token = localStorage.getItem("nexus_token");
+    const saved = localStorage.getItem("nexus_user");
+    if (token && saved) {
+      try { setCurrentUser(JSON.parse(saved)); } catch { /* ignore */ }
+    }
+    setAuthChecked(true);
+  }, []);
+
+  const handleAuth = (user: User, _token: string) => {
+    setCurrentUser(user);
+  };
+
+  const handleLogout = async () => {
+    const token = localStorage.getItem("nexus_token");
+    if (token) {
+      await fetch(AUTH_URL, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "X-Auth-Token": token },
+        body: JSON.stringify({ action: "logout" }),
+      });
+    }
+    localStorage.removeItem("nexus_token");
+    localStorage.removeItem("nexus_user");
+    setCurrentUser(null);
+  };
+
+  if (!authChecked) return null;
+  if (!currentUser) return <AuthScreen onAuth={handleAuth} />;
+
+  const userInitials = getInitials(currentUser.full_name);
 
   const renderPage = () => {
     switch (active) {
@@ -541,7 +741,7 @@ export default function Index() {
       case "notifications": return <NotificationsPage />;
       case "search": return <SearchPage />;
       case "messages": return <MessagesPage />;
-      case "profile": return <ProfilePage />;
+      case "profile": return <ProfilePage user={currentUser} />;
     }
   };
 
@@ -586,13 +786,13 @@ export default function Index() {
         <div className="px-3 py-4 border-t" style={{ borderColor: "hsl(221,25%,20%)" }}>
           <div className="flex items-center gap-2.5">
             <div className="w-8 h-8 rounded-full flex items-center justify-center text-xs font-semibold text-white flex-shrink-0" style={{ background: "hsl(213,80%,42%)" }}>
-              АК
+              {userInitials}
             </div>
             <div className="flex-1 min-w-0">
-              <div className="text-xs font-medium truncate" style={{ color: "hsl(214,30%,88%)" }}>Андрей Козлов</div>
-              <div className="text-xs truncate" style={{ color: "hsl(214,25%,48%)" }}>Директор по развитию</div>
+              <div className="text-xs font-medium truncate" style={{ color: "hsl(214,30%,88%)" }}>{currentUser.full_name}</div>
+              <div className="text-xs truncate" style={{ color: "hsl(214,25%,48%)" }}>{currentUser.job_title || "Участник"}</div>
             </div>
-            <button className="opacity-40 hover:opacity-80 transition-opacity">
+            <button className="opacity-40 hover:opacity-80 transition-opacity" onClick={handleLogout} title="Выйти">
               <Icon name="LogOut" size={14} style={{ color: "hsl(214,30%,72%)" }} />
             </button>
           </div>
