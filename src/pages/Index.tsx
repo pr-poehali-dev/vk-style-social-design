@@ -2740,26 +2740,6 @@ export default function Index() {
   const userInitials = getInitials(currentUser.full_name);
   const visibleNav = navItems.filter((item) => !item.adminOnly || isAdmin);
 
-  // Если просматриваем чужой профиль
-  if (viewingUserId) {
-    return (
-      <div className="flex h-screen overflow-hidden bg-background font-ibm">
-        <aside className="hidden md:flex w-60 flex-shrink-0 flex-col sidebar-dark">
-          <SidebarContent />
-        </aside>
-        <main className="flex-1 overflow-y-auto pb-16 md:pb-0">
-          <UserProfilePage userId={viewingUserId} currentUser={currentUser}
-            onBack={() => setViewingUserId(null)}
-            onOpenProfile={(uid) => setViewingUserId(uid)}
-            onOpenChat={async (uid) => {
-              const r = await apiPost(SOCIAL_URL, { action: "chat_start", partner_id: uid });
-              if (r.ok) { setViewingUserId(null); setActive("messages"); }
-            }} />
-        </main>
-      </div>
-    );
-  }
-
   const markLoaded = (tab: string) => setLoadedTabs((prev) => new Set([...prev, tab]));
 
   const renderPage = () => {
@@ -2917,7 +2897,17 @@ export default function Index() {
         </div>
 
         <div className="flex-1 overflow-y-auto pb-16 md:pb-0">
-          <div key={active} className="section-enter h-full">{renderPage()}</div>
+          {viewingUserId ? (
+            <UserProfilePage userId={viewingUserId} currentUser={currentUser}
+              onBack={() => setViewingUserId(null)}
+              onOpenProfile={(uid) => setViewingUserId(uid)}
+              onOpenChat={async (uid) => {
+                const r = await apiPost(SOCIAL_URL, { action: "chat_start", partner_id: uid });
+                if (r.ok) { setViewingUserId(null); setActive("messages"); }
+              }} />
+          ) : (
+            <div key={active} className="section-enter h-full">{renderPage()}</div>
+          )}
         </div>
       </main>
     </div>
