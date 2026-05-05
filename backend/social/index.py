@@ -40,17 +40,6 @@ def get_user_by_token(cur, token):
     )
     return cur.fetchone()
 
-def get_user_stats(cur, uid):
-    cur.execute(f"SELECT COUNT(*) FROM {SCHEMA}.follows WHERE following_id=%s", (uid,))
-    followers = cur.fetchone()[0]
-    cur.execute(f"SELECT COUNT(*) FROM {SCHEMA}.follows WHERE follower_id=%s", (uid,))
-    following = cur.fetchone()[0]
-    cur.execute(f"SELECT COUNT(*) FROM {SCHEMA}.posts WHERE user_id=%s", (uid,))
-    posts = cur.fetchone()[0]
-    cur.execute(f"SELECT COALESCE(SUM(views_count),0), COALESCE(SUM(reach_count),0) FROM {SCHEMA}.posts WHERE user_id=%s", (uid,))
-    vs = cur.fetchone()
-    return {"followers": int(followers), "following": int(following), "posts": int(posts), "views": int(vs[0]), "reach": int(vs[1])}
-
 
 def handler(event: dict, context) -> dict:
     if event.get("httpMethod") == "OPTIONS":
@@ -162,11 +151,9 @@ def handler(event: dict, context) -> dict:
                 (user_id, target_id)
             )
 
-        cur.execute(f"SELECT COUNT(*) FROM {SCHEMA}.follows WHERE following_id=%s", (target_id,))
-        new_count = cur.fetchone()[0]
         conn.commit()
         conn.close()
-        return ok({"following": action == "follow", "followers_count": int(new_count)})
+        return ok({"following": action == "follow"})
 
     # --- get notifications ---
     if action == "get_notifications":
@@ -435,37 +422,11 @@ def handler(event: dict, context) -> dict:
             u.social_vk, u.social_tg, u.social_linkedin, u.social_instagram
             FROM {SCHEMA}.sessions s JOIN {SCHEMA}.users u ON u.id=s.user_id
             WHERE s.token=%s AND s.expires_at>NOW()""", (token,))
-        row = cur.fetchone()
-        if not row: conn.close(); return err(401, "Сессия истекла")
-        stats = get_user_stats(cur, row[0])
-        conn.close()
+        row = cur.fetchone(); conn.close()
+        if not row: return err(401, "Сессия истекла")
         return ok({"id": row[0], "email": row[1], "full_name": row[2], "job_title": row[3] or "",
             "bio": row[4] or "", "avatar_url": row[5] or "",
             "social_vk": row[6] or "", "social_tg": row[7] or "",
-            "social_linkedin": row[8] or "", "social_instagram": row[9] or "",
-            "stats": stats})
-
-    # --- get stats for any user ---
-    if action == "get_stats":
-        uid = body.get("user_id") or qs.get("user_id")
-        if not uid:
-            if not token: return err(401, "Не авторизован")
-            conn = get_conn(); cur = conn.cursor()
-            u = get_user_by_token(cur, token)
-            if not u: conn.close(); return err(401, "Сессия истекла")
-            uid = u[0]
-        conn = get_conn(); cur = conn.cursor()
-        stats = get_user_stats(cur, int(uid))
-        # is_following
-        viewer_id = None
-        if token:
-            u2 = get_user_by_token(cur, token)
-            if u2: viewer_id = u2[0]
-        is_following = False
-        if viewer_id and viewer_id != int(uid):
-            cur.execute(f"SELECT 1 FROM {SCHEMA}.follows WHERE follower_id=%s AND following_id=%s", (viewer_id, int(uid)))
-            is_following = cur.fetchone() is not None
-        conn.close()
-        return ok({**stats, "is_following": is_following})
+            "social_linkedin": row[8] or "", "social_instagram": row[9] or ""})
 
     return err(400, "Неизвестное действие")

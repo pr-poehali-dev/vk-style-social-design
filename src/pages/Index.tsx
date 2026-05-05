@@ -65,7 +65,6 @@ interface PostAuthor {
   full_name: string;
   job_title: string;
   initials: string;
-  avatar_url?: string;
 }
 
 interface Post {
@@ -75,21 +74,11 @@ interface Post {
   likes_count: number;
   comments_count: number;
   views_count: number;
-  share_count: number;
   created_at: string;
   author: PostAuthor;
   liked: boolean;
-  is_mine: boolean;
   media_url?: string;
   media_type?: string;
-}
-
-interface UserStats {
-  followers: number;
-  following: number;
-  posts: number;
-  views: number;
-  reach: number;
 }
 
 function timeAgo(dateStr: string): string {
@@ -292,16 +281,15 @@ function AuthScreen({ onAuth }: { onAuth: (user: User, token: string) => void })
   );
 }
 
-type Section = "feed" | "friends" | "notifications" | "search" | "messages" | "profile" | "admin";
+type Section = "feed" | "friends" | "notifications" | "search" | "messages" | "profile";
 
-const navItems: { id: Section; label: string; icon: string; adminOnly?: boolean }[] = [
+const navItems: { id: Section; label: string; icon: string }[] = [
   { id: "feed", label: "Главная", icon: "LayoutDashboard" },
   { id: "friends", label: "Контакты", icon: "Users" },
   { id: "notifications", label: "Уведомления", icon: "Bell" },
   { id: "search", label: "Поиск", icon: "Search" },
   { id: "messages", label: "Сообщения", icon: "MessageSquare" },
   { id: "profile", label: "Профиль", icon: "User" },
-  { id: "admin", label: "Админ", icon: "Shield", adminOnly: true },
 ];
 
 const contacts = [
@@ -486,23 +474,17 @@ function CreatePostModal({ userInitials, onClose, onCreated }: { userInitials: s
   );
 }
 
-function PostCard({ post, onLike, onCommentAdded, onDelete, userInitials, userAvatarUrl }: {
+function PostCard({ post, onLike, onCommentAdded, userInitials }: {
   post: Post;
   onLike: (id: number) => void;
   onCommentAdded: (id: number) => void;
-  onDelete?: (id: number) => void;
   userInitials: string;
-  userAvatarUrl?: string;
 }) {
   const [showComments, setShowComments] = useState(false);
   const [comments, setComments] = useState<Comment[]>([]);
   const [loadingComments, setLoadingComments] = useState(false);
   const [commentText, setCommentText] = useState("");
   const [submitting, setSubmitting] = useState(false);
-  const [shareCount, setShareCount] = useState(post.share_count || 0);
-  const [sharing, setSharing] = useState(false);
-  const [deleting, setDeleting] = useState(false);
-  const [menuOpen, setMenuOpen] = useState(false);
 
   const toggleComments = async () => {
     if (!showComments && comments.length === 0) {
@@ -526,61 +508,22 @@ function PostCard({ post, onLike, onCommentAdded, onDelete, userInitials, userAv
     }
   };
 
-  const handleShare = async () => {
-    setSharing(true);
-    const pageUrl = window.location.href;
-    const shareText = post.text ? `${post.text.slice(0, 100)}... — NEXUS` : "Пост из NEXUS";
-    if (navigator.share) {
-      try { await navigator.share({ title: "NEXUS", text: shareText, url: pageUrl }); } catch { /* cancelled */ }
-    } else {
-      await navigator.clipboard.writeText(pageUrl).catch(() => {});
-      alert("Ссылка скопирована в буфер обмена");
-    }
-    const r = await apiPost(POSTS_URL, { action: "share", post_id: post.id });
-    if (r.ok) setShareCount(r.data.share_count as number || shareCount + 1);
-    setSharing(false);
-  };
-
-  const handleDelete = async () => {
-    if (!confirm("Удалить этот пост?")) return;
-    setDeleting(true);
-    const r = await apiPost(POSTS_URL, { action: "delete", post_id: post.id });
-    setDeleting(false);
-    if (r.ok) onDelete?.(post.id);
-  };
-
   return (
     <div className="post-card">
       <div className="flex items-start gap-3">
-        <Avatar initials={post.author.initials} avatarUrl={post.author.avatar_url} />
+        <Avatar initials={post.author.initials} />
         <div className="flex-1 min-w-0">
           <div className="font-semibold text-sm">{post.author.full_name}</div>
           <div className="text-xs mt-0.5" style={{ color: "hsl(220,15%,55%)" }}>{post.author.job_title}</div>
           <div className="text-xs mt-0.5" style={{ color: "hsl(220,15%,65%)" }}>{timeAgo(post.created_at)}</div>
         </div>
-        {post.is_mine && (
-          <div className="relative">
-            <button className="w-7 h-7 flex items-center justify-center rounded-md hover:bg-muted" style={{ color: "hsl(220,15%,55%)" }} onClick={() => setMenuOpen(v => !v)}>
-              <Icon name="MoreHorizontal" size={15} />
-            </button>
-            {menuOpen && (
-              <div className="absolute right-0 top-8 z-20 rounded-lg shadow-lg py-1 min-w-[130px]" style={{ background: "white", border: "1px solid hsl(216,20%,88%)" }}>
-                <button className="w-full text-left px-4 py-2 text-xs flex items-center gap-2 hover:bg-red-50" style={{ color: "hsl(0,72%,48%)" }}
-                  onClick={() => { setMenuOpen(false); handleDelete(); }} disabled={deleting}>
-                  <Icon name="Trash2" size={13} />{deleting ? "Удаление..." : "Удалить пост"}
-                </button>
-              </div>
-            )}
-          </div>
-        )}
       </div>
-
       {post.text && <p className="mt-3 text-sm leading-relaxed whitespace-pre-wrap" style={{ color: "hsl(220,25%,20%)" }}>{post.text}</p>}
       {post.media_url && post.media_type === "image" && (
-        <img src={post.media_url} alt="media" className="mt-3 w-full rounded-xl object-cover max-h-96" style={{ cursor: "pointer" }} onClick={() => window.open(post.media_url, "_blank")} />
+        <img src={post.media_url} alt="media" className="mt-3 w-full rounded-lg object-cover max-h-80" />
       )}
       {post.media_url && post.media_type === "video" && (
-        <video src={post.media_url} controls className="mt-3 w-full rounded-xl max-h-96" />
+        <video src={post.media_url} controls className="mt-3 w-full rounded-lg max-h-80" />
       )}
       {post.tags.length > 0 && (
         <div className="flex flex-wrap gap-1.5 mt-3">
@@ -588,26 +531,27 @@ function PostCard({ post, onLike, onCommentAdded, onDelete, userInitials, userAv
         </div>
       )}
       <div className="flex items-center justify-between mt-4 pt-3 border-t text-xs" style={{ borderColor: "hsl(216,20%,90%)", color: "hsl(220,15%,55%)" }}>
-        <span className="flex items-center gap-1"><Icon name="Eye" size={13} />{post.views_count.toLocaleString("ru")}</span>
-        <div className="flex items-center gap-3">
+        <span className="flex items-center gap-1"><Icon name="Eye" size={13} />{post.views_count.toLocaleString("ru")} просмотров</span>
+        <div className="flex items-center gap-4">
           <button className="flex items-center gap-1.5 transition-colors" onClick={() => onLike(post.id)} style={{ color: post.liked ? "hsl(0,72%,51%)" : "hsl(220,15%,55%)" }}>
             <Icon name="Heart" size={14} />{post.likes_count}
           </button>
           <button className="flex items-center gap-1.5 transition-colors hover:text-blue-600" onClick={toggleComments} style={{ color: showComments ? "hsl(213,80%,40%)" : "hsl(220,15%,55%)" }}>
             <Icon name="MessageCircle" size={14} />{post.comments_count}
           </button>
-          <button className="flex items-center gap-1.5 hover:text-blue-600 transition-colors" onClick={handleShare} disabled={sharing}>
-            <Icon name="Share2" size={14} />{shareCount > 0 ? shareCount : ""}
+          <button className="flex items-center gap-1.5 hover:text-blue-600 transition-colors">
+            <Icon name="Share2" size={14} />Поделиться
           </button>
         </div>
       </div>
 
+      {/* Comments section */}
       {showComments && (
         <div className="mt-3 pt-3 border-t space-y-3" style={{ borderColor: "hsl(216,20%,92%)" }}>
           {loadingComments && <div className="h-8 rounded shimmer" />}
           {comments.map((c) => (
             <div key={c.id} className="flex items-start gap-2">
-              <Avatar initials={(c.author as PostAuthor & { avatar_url?: string }).avatar_url ? "" : c.author.initials} avatarUrl={(c.author as PostAuthor & { avatar_url?: string }).avatar_url} size="sm" />
+              <Avatar initials={c.author.initials} size="sm" />
               <div className="flex-1 px-3 py-2 rounded-lg" style={{ background: "hsl(216,20%,96%)" }}>
                 <div className="flex items-baseline gap-2">
                   <span className="font-medium text-xs">{c.author.full_name}</span>
@@ -621,7 +565,7 @@ function PostCard({ post, onLike, onCommentAdded, onDelete, userInitials, userAv
             <p className="text-xs text-center py-2" style={{ color: "hsl(220,15%,62%)" }}>Будьте первым — оставьте комментарий</p>
           )}
           <div className="flex items-center gap-2">
-            <Avatar initials={userInitials} avatarUrl={userAvatarUrl} size="sm" />
+            <Avatar initials={userInitials} size="sm" />
             <input
               className="flex-1 px-3 py-1.5 rounded-full border text-sm outline-none focus:border-blue-400 transition-all"
               style={{ borderColor: "hsl(216,20%,85%)", color: "hsl(220,30%,15%)" }}
@@ -655,16 +599,16 @@ function FeedPage({ currentUser }: { currentUser: User | null }) {
 
   const handleLike = async (postId: number) => {
     const r = await apiPost(POSTS_URL, { action: "like", post_id: postId });
-    if (r.ok) setFeedPosts((prev) => prev.map((p) => p.id === postId
-      ? { ...p, liked: r.data.liked as boolean, likes_count: r.data.likes_count as number } : p));
+    if (r.ok) {
+      setFeedPosts((prev) => prev.map((p) => p.id === postId
+        ? { ...p, liked: r.data.liked as boolean, likes_count: r.data.likes_count as number }
+        : p
+      ));
+    }
   };
 
   const handleCommentAdded = (postId: number) => {
     setFeedPosts((prev) => prev.map((p) => p.id === postId ? { ...p, comments_count: p.comments_count + 1 } : p));
-  };
-
-  const handleDelete = (postId: number) => {
-    setFeedPosts((prev) => prev.filter((p) => p.id !== postId));
   };
 
   return (
@@ -675,7 +619,7 @@ function FeedPage({ currentUser }: { currentUser: User | null }) {
 
       <div className="post-card">
         <div className="flex items-center gap-3">
-          <Avatar initials={userInitials} avatarUrl={currentUser?.avatar_url} />
+          <Avatar initials={userInitials} />
           <button className="flex-1 text-left px-4 py-2.5 rounded-full border text-sm transition-colors hover:border-blue-400" style={{ borderColor: "hsl(216,20%,85%)", color: "hsl(220,15%,55%)" }} onClick={() => setShowCreate(true)}>
             Поделитесь профессиональными новостями...
           </button>
@@ -683,9 +627,6 @@ function FeedPage({ currentUser }: { currentUser: User | null }) {
         <div className="flex items-center gap-1.5 mt-3 pt-3 border-t" style={{ borderColor: "hsl(216,20%,90%)" }}>
           <button className="btn-outline text-xs px-3 py-1.5 flex items-center gap-1.5" onClick={() => setShowCreate(true)}>
             <Icon name="FileText" size={13} />Написать пост
-          </button>
-          <button className="btn-outline text-xs px-3 py-1.5 flex items-center gap-1.5" onClick={() => setShowCreate(true)}>
-            <Icon name="Image" size={13} />Фото/Видео
           </button>
         </div>
       </div>
@@ -714,8 +655,7 @@ function FeedPage({ currentUser }: { currentUser: User | null }) {
       )}
 
       {feedPosts.map((post) => (
-        <PostCard key={post.id} post={post} onLike={handleLike} onCommentAdded={handleCommentAdded}
-          onDelete={handleDelete} userInitials={userInitials} userAvatarUrl={currentUser?.avatar_url} />
+        <PostCard key={post.id} post={post} onLike={handleLike} onCommentAdded={handleCommentAdded} userInitials={userInitials} />
       ))}
     </div>
   );
@@ -1260,28 +1200,18 @@ function EditProfileModal({
 function ProfilePage({ user, onUserUpdate }: { user?: User; onUserUpdate?: (u: User) => void }) {
   const [editOpen, setEditOpen] = useState(false);
   const [uploadingAvatar, setUploadingAvatar] = useState(false);
-  const [stats, setStats] = useState<UserStats | null>(null);
-  const [userPosts, setUserPosts] = useState<Post[]>([]);
-  const [loadingPosts, setLoadingPosts] = useState(false);
-  const [postView, setPostView] = useState<"grid" | "list">("grid");
   const avatarInputRef = { current: null as HTMLInputElement | null };
 
   const displayName = user?.full_name || "Пользователь";
   const displayTitle = user?.job_title || "Участник сети";
   const displayBio = user?.bio || "";
   const displayInitials = getInitials(displayName);
-
-  useEffect(() => {
-    if (!user?.id) return;
-    apiPost(SOCIAL_URL, { action: "get_stats" }).then((r) => {
-      if (r.ok) setStats(r.data as unknown as UserStats);
-    });
-    setLoadingPosts(true);
-    apiPost(POSTS_URL, { action: "user_posts", user_id: user.id }).then((r) => {
-      setUserPosts((r.data.posts as Post[]) || []);
-      setLoadingPosts(false);
-    });
-  }, [user?.id]);
+  const stats = [
+    { label: "Подписчиков", value: "—" },
+    { label: "Подписок", value: "—" },
+    { label: "Постов", value: "—" },
+    { label: "Просмотров", value: "—" },
+  ];
 
   const handleAvatarUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -1296,11 +1226,6 @@ function ProfilePage({ user, onUserUpdate }: { user?: User; onUserUpdate?: (u: U
     }
   };
 
-  const handleDeletePost = (postId: number) => {
-    setUserPosts((prev) => prev.filter((p) => p.id !== postId));
-    if (stats) setStats({ ...stats, posts: Math.max(0, stats.posts - 1) });
-  };
-
   const socials = [
     { key: "social_vk", label: "ВКонтакте", icon: "Globe", color: "hsl(213,90%,50%)", prefix: "https://vk.com/", value: user?.social_vk },
     { key: "social_tg", label: "Telegram", icon: "Send", color: "hsl(200,90%,45%)", prefix: "https://t.me/", value: user?.social_tg },
@@ -1308,33 +1233,44 @@ function ProfilePage({ user, onUserUpdate }: { user?: User; onUserUpdate?: (u: U
     { key: "social_instagram", label: "Instagram", icon: "Camera", color: "hsl(320,80%,55%)", prefix: "https://instagram.com/", value: user?.social_instagram },
   ].filter((s) => s.value);
 
-  const mediaOnly = userPosts.filter((p) => p.media_url);
-  const allStats = [
-    { label: "Подписчиков", value: stats ? stats.followers.toLocaleString("ru") : "…" },
-    { label: "Подписок", value: stats ? stats.following.toLocaleString("ru") : "…" },
-    { label: "Постов", value: stats ? stats.posts.toLocaleString("ru") : "…" },
-    { label: "Просмотров", value: stats ? stats.views.toLocaleString("ru") : "…" },
-  ];
-
   return (
     <>
       <input ref={(el) => { avatarInputRef.current = el; }} type="file" accept="image/*" className="hidden" onChange={handleAvatarUpload} />
       {editOpen && user && (
-        <EditProfileModal user={user} onClose={() => setEditOpen(false)} onSave={(u) => { onUserUpdate?.(u); }} />
+        <EditProfileModal
+          user={user}
+          onClose={() => setEditOpen(false)}
+          onSave={(u) => { onUserUpdate?.(u); }}
+        />
       )}
     <div className="max-w-3xl mx-auto px-4 py-5">
       <div className="post-card mb-4">
-        <div className="h-24 rounded-lg -mx-5 -mt-5 mb-4" style={{ background: "linear-gradient(135deg, hsl(221,55%,20%) 0%, hsl(213,80%,35%) 100%)" }} />
+        <div
+          className="h-24 rounded-lg -mx-5 -mt-5 mb-4"
+          style={{ background: "linear-gradient(135deg, hsl(221,55%,20%) 0%, hsl(213,80%,35%) 100%)" }}
+        />
         <div className="flex items-end gap-4 -mt-10 mb-4">
+          {/* Avatar with upload */}
           <div className="relative flex-shrink-0 group" onClick={() => avatarInputRef.current?.click()} style={{ cursor: "pointer" }}>
-            {user?.avatar_url
-              ? <img src={user.avatar_url} alt={displayInitials} className="w-16 h-16 rounded-full border-4 border-card object-cover" />
-              : <div className="w-16 h-16 rounded-full border-4 border-card flex items-center justify-center text-base font-bold text-white" style={{ background: "hsl(213,80%,40%)" }}>{displayInitials}</div>}
-            <div className="absolute inset-0 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity" style={{ background: "rgba(0,0,0,0.45)" }}>
-              {uploadingAvatar ? <Icon name="Loader" size={18} style={{ color: "white" }} className="animate-spin" /> : <Icon name="Camera" size={18} style={{ color: "white" }} />}
+            {user?.avatar_url ? (
+              <img src={user.avatar_url} alt={displayInitials}
+                className="w-16 h-16 rounded-full border-4 border-card object-cover"
+                style={{ background: "hsl(213,80%,40%)" }} />
+            ) : (
+              <div className="w-16 h-16 rounded-full border-4 border-card flex items-center justify-center text-base font-bold text-white"
+                style={{ background: "hsl(213,80%,40%)" }}>
+                {displayInitials}
+              </div>
+            )}
+            <div className="absolute inset-0 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
+              style={{ background: "rgba(0,0,0,0.45)" }}>
+              {uploadingAvatar
+                ? <Icon name="Loader" size={18} style={{ color: "white" }} className="animate-spin" />
+                : <Icon name="Camera" size={18} style={{ color: "white" }} />}
             </div>
           </div>
-          <div className="pb-1 flex-1 min-w-0">
+
+          <div className="pb-1 flex-1">
             <h1 className="font-bold text-lg">{displayName}</h1>
             <p className="text-sm" style={{ color: "hsl(220,15%,50%)" }}>{displayTitle}</p>
             {socials.length > 0 && (
@@ -1349,17 +1285,22 @@ function ProfilePage({ user, onUserUpdate }: { user?: User; onUserUpdate?: (u: U
               </div>
             )}
           </div>
-          <div className="pb-1 flex gap-2 flex-shrink-0">
+          <div className="pb-1 flex gap-2">
             <button className="btn-primary text-xs px-4 py-2" onClick={() => setEditOpen(true)}>Редактировать</button>
+            <button className="btn-outline text-xs px-3 py-2"><Icon name="Share2" size={13} /></button>
           </div>
         </div>
 
-        {displayBio
-          ? <p className="text-sm leading-relaxed mb-4" style={{ color: "hsl(220,25%,25%)" }}>{displayBio}</p>
-          : <p className="text-sm leading-relaxed mb-4 italic cursor-pointer hover:underline" style={{ color: "hsl(220,15%,65%)" }} onClick={() => setEditOpen(true)}>Добавьте информацию о себе...</p>}
+        {displayBio ? (
+          <p className="text-sm leading-relaxed mb-4" style={{ color: "hsl(220,25%,25%)" }}>{displayBio}</p>
+        ) : (
+          <p className="text-sm leading-relaxed mb-4 italic cursor-pointer hover:underline" style={{ color: "hsl(220,15%,65%)" }} onClick={() => setEditOpen(true)}>
+            Добавьте информацию о себе...
+          </p>
+        )}
 
         <div className="grid grid-cols-4 gap-3 pt-4 border-t" style={{ borderColor: "hsl(216,20%,90%)" }}>
-          {allStats.map((s) => (
+          {stats.map((s) => (
             <div key={s.label} className="text-center">
               <div className="font-bold text-lg" style={{ color: "hsl(221,65%,22%)" }}>{s.value}</div>
               <div className="text-xs" style={{ color: "hsl(220,15%,55%)" }}>{s.label}</div>
@@ -1368,256 +1309,36 @@ function ProfilePage({ user, onUserUpdate }: { user?: User; onUserUpdate?: (u: U
         </div>
       </div>
 
-      {/* Analytics */}
-      {stats && (
-        <div className="post-card mb-4">
-          <h2 className="font-semibold text-sm mb-3 flex items-center gap-2">
-            <Icon name="BarChart2" size={15} style={{ color: "hsl(213,80%,40%)" }} />
-            Аналитика
-          </h2>
-          <div className="grid grid-cols-3 gap-3">
-            {[
-              { label: "Просмотры", value: stats.views.toLocaleString("ru"), icon: "Eye" },
-              { label: "Охват", value: stats.reach.toLocaleString("ru"), icon: "Users" },
-              { label: "Подписчики", value: stats.followers.toLocaleString("ru"), icon: "UserPlus" },
-            ].map((m) => (
-              <div key={m.label} className="p-3 rounded-lg" style={{ background: "hsl(216,20%,96%)" }}>
-                <div className="text-xs mb-1 flex items-center gap-1" style={{ color: "hsl(220,15%,55%)" }}>
-                  <Icon name={m.icon} size={11} />{m.label}
-                </div>
-                <div className="font-bold text-base" style={{ color: "hsl(221,65%,22%)" }}>{m.value}</div>
+      <div className="post-card mb-4">
+        <h2 className="font-semibold text-sm mb-4 flex items-center gap-2">
+          <Icon name="BarChart2" size={15} style={{ color: "hsl(213,80%,40%)" }} />
+          Аналитика за 30 дней
+        </h2>
+        <div className="grid grid-cols-3 gap-3">
+          {[
+            { label: "Просмотры", value: "12 480", change: "+18%", up: true },
+            { label: "Охват", value: "8 930", change: "+24%", up: true },
+            { label: "Подписчики", value: "+127", change: "-3%", up: false },
+          ].map((m) => (
+            <div key={m.label} className="p-3 rounded-lg" style={{ background: "hsl(216,20%,96%)" }}>
+              <div className="text-xs mb-1" style={{ color: "hsl(220,15%,55%)" }}>{m.label}</div>
+              <div className="font-bold text-base" style={{ color: "hsl(221,65%,22%)" }}>{m.value}</div>
+              <div className="text-xs font-medium mt-1 flex items-center gap-1" style={{ color: m.up ? "hsl(142,70%,38%)" : "hsl(0,72%,51%)" }}>
+                <Icon name={m.up ? "TrendingUp" : "TrendingDown"} size={11} />
+                {m.change}
               </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* Posts in profile */}
-      <div className="flex items-center justify-between mb-3">
-        <h2 className="font-semibold text-xs uppercase tracking-wider" style={{ color: "hsl(220,15%,50%)" }}>Публикации</h2>
-        <div className="flex gap-1">
-          <button onClick={() => setPostView("grid")} className={`p-1.5 rounded ${postView === "grid" ? "btn-primary" : "btn-outline"}`}><Icon name="Grid3X3" size={13} /></button>
-          <button onClick={() => setPostView("list")} className={`p-1.5 rounded ${postView === "list" ? "btn-primary" : "btn-outline"}`}><Icon name="List" size={13} /></button>
+            </div>
+          ))}
         </div>
       </div>
 
-      {loadingPosts && <div className="h-32 rounded-lg shimmer" />}
-
-      {!loadingPosts && postView === "grid" && (
-        <div>
-          {mediaOnly.length > 0 && (
-            <>
-              <div className="text-xs font-medium mb-2" style={{ color: "hsl(220,15%,50%)" }}>Фото и видео</div>
-              <div className="grid grid-cols-3 gap-1 mb-4">
-                {mediaOnly.map((p) => (
-                  <div key={p.id} className="relative aspect-square rounded-lg overflow-hidden bg-gray-100">
-                    {p.media_type === "image"
-                      ? <img src={p.media_url} alt="" className="w-full h-full object-cover" />
-                      : <div className="w-full h-full flex items-center justify-center" style={{ background: "hsl(221,25%,18%)" }}>
-                          <Icon name="Play" size={24} style={{ color: "white" }} />
-                        </div>}
-                    {p.media_type === "video" && (
-                      <span className="absolute top-1 right-1"><Icon name="Video" size={12} style={{ color: "white" }} /></span>
-                    )}
-                    <div className="absolute bottom-0 left-0 right-0 flex items-center gap-2 px-2 py-1" style={{ background: "rgba(0,0,0,0.4)", color: "white", fontSize: "10px" }}>
-                      <Icon name="Heart" size={10} />{p.likes_count}
-                      <Icon name="Eye" size={10} />{p.views_count}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </>
-          )}
-          {userPosts.filter((p) => !p.media_url).length > 0 && (
-            <>
-              <div className="text-xs font-medium mb-2" style={{ color: "hsl(220,15%,50%)" }}>Текстовые посты</div>
-              <div className="space-y-2">
-                {userPosts.filter((p) => !p.media_url).map((p) => (
-                  <div key={p.id} className="post-card py-2 px-4 flex items-start justify-between gap-3">
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm truncate" style={{ color: "hsl(220,25%,20%)" }}>{p.text || "—"}</p>
-                      <div className="text-xs mt-1 flex items-center gap-3" style={{ color: "hsl(220,15%,60%)" }}>
-                        <span>{timeAgo(p.created_at)}</span>
-                        <span className="flex items-center gap-1"><Icon name="Heart" size={11} />{p.likes_count}</span>
-                        <span className="flex items-center gap-1"><Icon name="Eye" size={11} />{p.views_count}</span>
-                      </div>
-                    </div>
-                    {p.is_mine && (
-                      <button className="text-xs px-2 py-1 rounded hover:bg-red-50 flex items-center gap-1" style={{ color: "hsl(0,72%,48%)" }}
-                        onClick={async () => { if (!confirm("Удалить?")) return; await apiPost(POSTS_URL, { action: "delete", post_id: p.id }); handleDeletePost(p.id); }}>
-                        <Icon name="Trash2" size={12} />
-                      </button>
-                    )}
-                  </div>
-                ))}
-              </div>
-            </>
-          )}
-          {!loadingPosts && userPosts.length === 0 && (
-            <div className="post-card text-center py-10" style={{ color: "hsl(220,15%,60%)" }}>
-              <Icon name="FileText" size={28} className="mx-auto mb-2 opacity-30" />
-              <div className="text-sm">Публикаций пока нет</div>
-            </div>
-          )}
-        </div>
-      )}
-
-      {!loadingPosts && postView === "list" && (
-        <div className="space-y-4">
-          {userPosts.map((p) => (
-            <PostCard key={p.id} post={p}
-              onLike={async (id) => { const r = await apiPost(POSTS_URL, { action: "like", post_id: id }); if (r.ok) setUserPosts((prev) => prev.map((pp) => pp.id === id ? { ...pp, liked: r.data.liked as boolean, likes_count: r.data.likes_count as number } : pp)); }}
-              onCommentAdded={(id) => setUserPosts((prev) => prev.map((pp) => pp.id === id ? { ...pp, comments_count: pp.comments_count + 1 } : pp))}
-              onDelete={handleDeletePost}
-              userInitials={displayInitials}
-              userAvatarUrl={user?.avatar_url}
-            />
-          ))}
-          {userPosts.length === 0 && (
-            <div className="post-card text-center py-10" style={{ color: "hsl(220,15%,60%)" }}>
-              <Icon name="FileText" size={28} className="mx-auto mb-2 opacity-30" />
-              <div className="text-sm">Публикаций пока нет</div>
-            </div>
-          )}
-        </div>
-      )}
+      <h2 className="font-semibold text-xs uppercase tracking-wider mb-3" style={{ color: "hsl(220,15%,50%)" }}>Публикации</h2>
+      <div className="post-card text-center py-10" style={{ color: "hsl(220,15%,60%)" }}>
+        <Icon name="FileText" size={28} className="mx-auto mb-2 opacity-30" />
+        <div className="text-sm">Публикации появятся здесь</div>
+      </div>
     </div>
     </>
-  );
-}
-
-function AdminPage() {
-  const [data, setData] = useState<{ users: unknown[]; posts: unknown[]; stats: { total_users: number; total_posts: number; total_views: number } } | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [tab, setTab] = useState<"stats" | "users" | "posts">("stats");
-
-  useEffect(() => {
-    apiPost(POSTS_URL, { action: "admin_data" }).then((r) => {
-      if (r.ok) setData(r.data as typeof data);
-      setLoading(false);
-    });
-  }, []);
-
-  const deleteUser = async (uid: number, name: string) => {
-    if (!confirm(`Удалить пользователя «${name}»? Все его посты тоже удалятся.`)) return;
-    const r = await apiPost(POSTS_URL, { action: "admin_delete_user", user_id: uid });
-    if (r.ok) setData((d) => d ? { ...d, users: d.users.filter((u: unknown) => (u as { id: number }).id !== uid) } : d);
-  };
-
-  const deletePost = async (pid: number) => {
-    if (!confirm("Удалить этот пост?")) return;
-    const r = await apiPost(POSTS_URL, { action: "delete", post_id: pid });
-    if (r.ok) setData((d) => d ? { ...d, posts: d.posts.filter((p: unknown) => (p as { id: number }).id !== pid) } : d);
-  };
-
-  const toggleAdmin = async (uid: number) => {
-    const r = await apiPost(POSTS_URL, { action: "admin_toggle", user_id: uid });
-    if (r.ok) setData((d) => d ? { ...d, users: d.users.map((u: unknown) => (u as { id: number }).id === uid ? { ...(u as object), is_admin: r.data.is_admin } : u) } : d);
-  };
-
-  if (loading) return <div className="max-w-4xl mx-auto px-4 py-10"><div className="h-20 rounded-lg shimmer" /></div>;
-
-  return (
-    <div className="max-w-4xl mx-auto px-4 py-5">
-      <div className="flex items-center gap-3 mb-5">
-        <div className="w-8 h-8 rounded-lg flex items-center justify-center" style={{ background: "hsl(0,72%,48%)" }}>
-          <Icon name="Shield" size={16} style={{ color: "white" }} />
-        </div>
-        <h1 className="font-bold text-lg">Панель администратора</h1>
-      </div>
-
-      <div className="flex gap-2 mb-5">
-        {(["stats", "users", "posts"] as const).map((t) => (
-          <button key={t} onClick={() => setTab(t)} className={tab === t ? "btn-primary text-xs px-4 py-2" : "btn-outline text-xs px-4 py-2"}>
-            {{ stats: "Статистика", users: "Пользователи", posts: "Посты" }[t]}
-          </button>
-        ))}
-      </div>
-
-      {tab === "stats" && data && (
-        <div className="grid grid-cols-3 gap-4">
-          {[
-            { label: "Пользователей", value: data.stats.total_users, icon: "Users", color: "hsl(213,80%,40%)" },
-            { label: "Публикаций", value: data.stats.total_posts, icon: "FileText", color: "hsl(142,70%,38%)" },
-            { label: "Просмотров", value: data.stats.total_views, icon: "Eye", color: "hsl(270,60%,50%)" },
-          ].map((s) => (
-            <div key={s.label} className="post-card text-center py-6">
-              <div className="w-10 h-10 rounded-full flex items-center justify-center mx-auto mb-3" style={{ background: `${s.color}18` }}>
-                <Icon name={s.icon} size={18} style={{ color: s.color }} />
-              </div>
-              <div className="font-bold text-2xl" style={{ color: "hsl(221,65%,22%)" }}>{s.value.toLocaleString("ru")}</div>
-              <div className="text-xs mt-1" style={{ color: "hsl(220,15%,55%)" }}>{s.label}</div>
-            </div>
-          ))}
-        </div>
-      )}
-
-      {tab === "users" && data && (
-        <div className="post-card overflow-hidden p-0">
-          <table className="w-full text-sm">
-            <thead>
-              <tr style={{ background: "hsl(216,20%,96%)" }}>
-                <th className="text-left px-4 py-3 text-xs font-semibold" style={{ color: "hsl(220,15%,50%)" }}>Пользователь</th>
-                <th className="text-left px-4 py-3 text-xs font-semibold" style={{ color: "hsl(220,15%,50%)" }}>Email</th>
-                <th className="text-center px-4 py-3 text-xs font-semibold" style={{ color: "hsl(220,15%,50%)" }}>Постов</th>
-                <th className="text-center px-4 py-3 text-xs font-semibold" style={{ color: "hsl(220,15%,50%)" }}>Подп.</th>
-                <th className="text-center px-4 py-3 text-xs font-semibold" style={{ color: "hsl(220,15%,50%)" }}>Действия</th>
-              </tr>
-            </thead>
-            <tbody>
-              {(data.users as { id: number; email: string; full_name: string; job_title: string; is_admin: boolean; posts_count: number; followers_count: number }[]).map((u) => (
-                <tr key={u.id} className="border-t" style={{ borderColor: "hsl(216,20%,92%)" }}>
-                  <td className="px-4 py-3">
-                    <div className="font-medium text-sm">{u.full_name}</div>
-                    <div className="text-xs" style={{ color: "hsl(220,15%,55%)" }}>{u.job_title || "—"}</div>
-                  </td>
-                  <td className="px-4 py-3 text-xs" style={{ color: "hsl(220,15%,55%)" }}>{u.email}</td>
-                  <td className="px-4 py-3 text-center text-sm">{u.posts_count}</td>
-                  <td className="px-4 py-3 text-center text-sm">{u.followers_count}</td>
-                  <td className="px-4 py-3">
-                    <div className="flex items-center justify-center gap-2">
-                      <button title={u.is_admin ? "Снять права" : "Сделать админом"}
-                        className="text-xs px-2 py-1 rounded" style={{ background: u.is_admin ? "hsl(0,80%,95%)" : "hsl(216,20%,94%)", color: u.is_admin ? "hsl(0,72%,45%)" : "hsl(220,15%,45%)" }}
-                        onClick={() => toggleAdmin(u.id)}>
-                        <Icon name={u.is_admin ? "ShieldOff" : "Shield"} size={12} />
-                      </button>
-                      <button title="Удалить" className="text-xs px-2 py-1 rounded" style={{ background: "hsl(0,80%,95%)", color: "hsl(0,72%,45%)" }}
-                        onClick={() => deleteUser(u.id, u.full_name)}>
-                        <Icon name="Trash2" size={12} />
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
-
-      {tab === "posts" && data && (
-        <div className="space-y-2">
-          {(data.posts as { id: number; text: string; created_at: string; author: string; likes_count: number; views_count: number; media_type: string }[]).map((p) => (
-            <div key={p.id} className="post-card flex items-start gap-3">
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-2 mb-1">
-                  <span className="font-medium text-xs">{p.author}</span>
-                  <span className="text-xs" style={{ color: "hsl(220,15%,62%)" }}>{timeAgo(p.created_at)}</span>
-                  {p.media_type && <span className="text-xs px-1.5 py-0.5 rounded" style={{ background: "hsl(213,80%,94%)", color: "hsl(213,80%,40%)" }}>{p.media_type}</span>}
-                </div>
-                <p className="text-sm" style={{ color: "hsl(220,25%,22%)" }}>{p.text || "—"}</p>
-                <div className="flex gap-3 mt-1 text-xs" style={{ color: "hsl(220,15%,60%)" }}>
-                  <span className="flex items-center gap-1"><Icon name="Heart" size={11} />{p.likes_count}</span>
-                  <span className="flex items-center gap-1"><Icon name="Eye" size={11} />{p.views_count}</span>
-                </div>
-              </div>
-              <button className="text-xs px-2 py-1 rounded flex-shrink-0" style={{ background: "hsl(0,80%,95%)", color: "hsl(0,72%,45%)" }} onClick={() => deletePost(p.id)}>
-                <Icon name="Trash2" size={13} />
-              </button>
-            </div>
-          ))}
-        </div>
-      )}
-    </div>
   );
 }
 
@@ -1631,31 +1352,17 @@ export default function Index() {
   const [authChecked, setAuthChecked] = useState(false);
   const [showCreatePost, setShowCreatePost] = useState(false);
   const [unreadCount, setUnreadCount] = useState(0);
-  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
-  const [isAdmin, setIsAdmin] = useState(false);
 
   useEffect(() => {
     const token = localStorage.getItem("nexus_token");
     const saved = localStorage.getItem("nexus_user");
     if (token && saved) {
-      try {
-        const u = JSON.parse(saved);
-        setCurrentUser(u);
-        // Проверяем is_admin через get_profile
-        fetch(SOCIAL_URL, { method: "POST", headers: { "Content-Type": "application/json", "X-Auth-Token": token }, body: JSON.stringify({ action: "get_profile" }) })
-          .then((r) => r.text()).then((t) => {
-            let j: Record<string, unknown> = {};
-            try { j = JSON.parse(t); } catch { /* ignore */ }
-            if (typeof j === "string") { try { j = JSON.parse(j as string); } catch { /* ignore */ } }
-          });
-        // Проверим через posts admin_data — если успешно, то admin
-        fetch(POSTS_URL, { method: "POST", headers: { "Content-Type": "application/json", "X-Auth-Token": token }, body: JSON.stringify({ action: "admin_data" }) })
-          .then((r) => { if (r.ok) setIsAdmin(true); });
-      } catch { /* ignore */ }
+      try { setCurrentUser(JSON.parse(saved)); } catch { /* ignore */ }
     }
     setAuthChecked(true);
   }, []);
 
+  // Подтягиваем счётчик непрочитанных уведомлений
   useEffect(() => {
     if (!currentUser) return;
     const fetchCount = () => {
@@ -1670,35 +1377,26 @@ export default function Index() {
 
   const handleAuth = (user: User, _token: string) => {
     setCurrentUser(user);
-    // Проверяем права
-    setTimeout(() => {
-      fetch(POSTS_URL, { method: "POST", headers: { "Content-Type": "application/json", "X-Auth-Token": localStorage.getItem("nexus_token") || "" }, body: JSON.stringify({ action: "admin_data" }) })
-        .then((r) => { if (r.ok) setIsAdmin(true); });
-    }, 500);
   };
 
   const handleLogout = async () => {
     const token = localStorage.getItem("nexus_token");
     if (token) {
-      await fetch(AUTH_URL, { method: "POST", headers: { "Content-Type": "application/json", "X-Auth-Token": token }, body: JSON.stringify({ action: "logout" }) });
+      await fetch(AUTH_URL, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "X-Auth-Token": token },
+        body: JSON.stringify({ action: "logout" }),
+      });
     }
     localStorage.removeItem("nexus_token");
     localStorage.removeItem("nexus_user");
     setCurrentUser(null);
-    setIsAdmin(false);
-  };
-
-  const navigate = (section: Section) => {
-    setActive(section);
-    setMobileMenuOpen(false);
-    if (section === "notifications") setUnreadCount(0);
   };
 
   if (!authChecked) return null;
   if (!currentUser) return <AuthScreen onAuth={handleAuth} />;
 
   const userInitials = getInitials(currentUser.full_name);
-  const visibleNav = navItems.filter((item) => !item.adminOnly || isAdmin);
 
   const renderPage = () => {
     switch (active) {
@@ -1710,15 +1408,14 @@ export default function Index() {
         if (r.ok) setActive("messages");
       }} />;
       case "messages": return <MessagesPage currentUser={currentUser} />;
-      case "profile": return <ProfilePage user={currentUser} onUserUpdate={(u) => { setCurrentUser(u); localStorage.setItem("nexus_user", JSON.stringify(u)); }} />;
-      case "admin": return <AdminPage />;
+      case "profile": return <ProfilePage user={currentUser} onUserUpdate={(u) => { setCurrentUser(u); }} />;
     }
   };
 
-  const SidebarContent = () => (
-    <>
-      <div className="px-5 py-5 border-b" style={{ borderColor: "hsl(221,25%,20%)" }}>
-        <div className="flex items-center justify-between">
+  return (
+    <div className="flex h-screen overflow-hidden bg-background font-ibm">
+      <aside className="w-60 flex-shrink-0 flex flex-col sidebar-dark">
+        <div className="px-5 py-5 border-b" style={{ borderColor: "hsl(221,25%,20%)" }}>
           <div className="flex items-center gap-3">
             <div className="w-8 h-8 rounded flex items-center justify-center" style={{ background: "hsl(213,80%,42%)" }}>
               <span className="text-white font-bold text-sm font-mono-ibm">N</span>
@@ -1728,107 +1425,79 @@ export default function Index() {
               <div className="text-xs" style={{ color: "hsl(214,25%,48%)" }}>Деловая сеть</div>
             </div>
           </div>
-          <button className="md:hidden p-1 rounded" style={{ color: "hsl(214,25%,55%)" }} onClick={() => setMobileMenuOpen(false)}>
-            <Icon name="X" size={18} />
-          </button>
         </div>
-      </div>
 
-      <nav className="flex-1 px-2.5 py-4 space-y-0.5 overflow-y-auto">
-        {visibleNav.map((item) => (
-          <button key={item.id} onClick={() => navigate(item.id)}
-            className={`nav-item w-full text-left ${active === item.id ? "active" : ""}`}>
-            <div className="relative flex-shrink-0">
-              <Icon name={item.icon} size={17} />
-              {item.id === "notifications" && unreadCount > 0 && active !== "notifications" && (
-                <span className="notification-dot">{unreadCount > 9 ? "9+" : unreadCount}</span>
+        <nav className="flex-1 px-2.5 py-4 space-y-0.5 overflow-y-auto">
+          {navItems.map((item) => (
+            <button
+              key={item.id}
+              onClick={() => { setActive(item.id); if (item.id === "notifications") setUnreadCount(0); }}
+              className={`nav-item w-full text-left ${active === item.id ? "active" : ""}`}
+            >
+              <div className="relative flex-shrink-0">
+                <Icon name={item.icon} size={17} />
+                {item.id === "notifications" && unreadCount > 0 && active !== "notifications" && (
+                  <span className="notification-dot">{unreadCount > 9 ? "9+" : unreadCount}</span>
+                )}
+              </div>
+              <span className="flex-1">{item.label}</span>
+              {item.id === "notifications" && unreadCount > 0 && active === "notifications" && (
+                <span className="text-xs font-bold px-1.5 py-0.5 rounded" style={{ background: "rgba(255,255,255,0.2)", color: "white" }}>
+                  {unreadCount}
+                </span>
               )}
-            </div>
-            <span className="flex-1">{item.label}</span>
-            {item.id === "notifications" && unreadCount > 0 && active === "notifications" && (
-              <span className="text-xs font-bold px-1.5 py-0.5 rounded" style={{ background: "rgba(255,255,255,0.2)", color: "white" }}>{unreadCount}</span>
+            </button>
+          ))}
+        </nav>
+
+        <div className="px-3 py-4 border-t" style={{ borderColor: "hsl(221,25%,20%)" }}>
+          <div className="flex items-center gap-2.5">
+            {currentUser.avatar_url ? (
+              <img src={currentUser.avatar_url} alt={userInitials} className="w-8 h-8 rounded-full object-cover flex-shrink-0" />
+            ) : (
+              <div className="w-8 h-8 rounded-full flex items-center justify-center text-xs font-semibold text-white flex-shrink-0" style={{ background: "hsl(213,80%,42%)" }}>
+                {userInitials}
+              </div>
             )}
-          </button>
-        ))}
-      </nav>
-
-      <div className="px-3 py-4 border-t" style={{ borderColor: "hsl(221,25%,20%)" }}>
-        <div className="flex items-center gap-2.5">
-          {currentUser.avatar_url
-            ? <img src={currentUser.avatar_url} alt={userInitials} className="w-8 h-8 rounded-full object-cover flex-shrink-0" />
-            : <div className="w-8 h-8 rounded-full flex items-center justify-center text-xs font-semibold text-white flex-shrink-0" style={{ background: "hsl(213,80%,42%)" }}>{userInitials}</div>}
-          <div className="flex-1 min-w-0">
-            <div className="text-xs font-medium truncate" style={{ color: "hsl(214,30%,88%)" }}>{currentUser.full_name}</div>
-            <div className="text-xs truncate" style={{ color: "hsl(214,25%,48%)" }}>{currentUser.job_title || "Участник"}</div>
+            <div className="flex-1 min-w-0">
+              <div className="text-xs font-medium truncate" style={{ color: "hsl(214,30%,88%)" }}>{currentUser.full_name}</div>
+              <div className="text-xs truncate" style={{ color: "hsl(214,25%,48%)" }}>{currentUser.job_title || "Участник"}</div>
+            </div>
+            <button className="opacity-40 hover:opacity-80 transition-opacity" onClick={handleLogout} title="Выйти">
+              <Icon name="LogOut" size={14} style={{ color: "hsl(214,30%,72%)" }} />
+            </button>
           </div>
-          <button className="opacity-40 hover:opacity-80 transition-opacity" onClick={handleLogout} title="Выйти">
-            <Icon name="LogOut" size={14} style={{ color: "hsl(214,30%,72%)" }} />
-          </button>
         </div>
-      </div>
-    </>
-  );
-
-  return (
-    <div className="flex h-screen overflow-hidden bg-background font-ibm">
-      {/* Desktop sidebar */}
-      <aside className="hidden md:flex w-60 flex-shrink-0 flex-col sidebar-dark">
-        <SidebarContent />
       </aside>
-
-      {/* Mobile overlay menu */}
-      {mobileMenuOpen && (
-        <div className="md:hidden fixed inset-0 z-50 flex">
-          <div className="w-64 flex flex-col sidebar-dark h-full shadow-2xl">
-            <SidebarContent />
-          </div>
-          <div className="flex-1 bg-black/50" onClick={() => setMobileMenuOpen(false)} />
-        </div>
-      )}
 
       <main className="flex-1 overflow-hidden flex flex-col min-w-0">
         {showCreatePost && currentUser && (
-          <CreatePostModal userInitials={userInitials} onClose={() => setShowCreatePost(false)}
-            onCreated={() => { setShowCreatePost(false); setActive("feed"); }} />
+          <CreatePostModal
+            userInitials={userInitials}
+            onClose={() => setShowCreatePost(false)}
+            onCreated={() => { setShowCreatePost(false); setActive("feed"); }}
+          />
         )}
-        <header className="h-12 flex-shrink-0 flex items-center justify-between px-4 border-b bg-card" style={{ borderColor: "hsl(216,20%,88%)" }}>
-          <div className="flex items-center gap-3">
-            {/* Mobile hamburger */}
-            <button className="md:hidden w-8 h-8 flex items-center justify-center rounded-md hover:bg-muted" style={{ color: "hsl(220,15%,50%)" }} onClick={() => setMobileMenuOpen(true)}>
-              <Icon name="Menu" size={18} />
-            </button>
-            <h1 className="font-semibold text-sm">{visibleNav.find((n) => n.id === active)?.label}</h1>
-          </div>
+        <header className="h-12 flex-shrink-0 flex items-center justify-between px-6 border-b bg-card" style={{ borderColor: "hsl(216,20%,88%)" }}>
+          <h1 className="font-semibold text-sm">{navItems.find((n) => n.id === active)?.label}</h1>
           <div className="flex items-center gap-2">
             <button className="btn-primary text-xs px-3 py-1.5 flex items-center gap-1.5" onClick={() => setShowCreatePost(true)}>
-              <Icon name="Plus" size={13} /><span className="hidden sm:inline">Создать пост</span>
+              <Icon name="Plus" size={13} />Создать пост
             </button>
-            <button className="relative w-8 h-8 flex items-center justify-center rounded-md hover:bg-muted transition-colors"
-              style={{ color: "hsl(220,15%,50%)" }} onClick={() => navigate("notifications")}>
+            <button
+              className="relative w-8 h-8 flex items-center justify-center rounded-md hover:bg-muted transition-colors"
+              style={{ color: "hsl(220,15%,50%)" }}
+              onClick={() => { setActive("notifications"); setUnreadCount(0); }}
+            >
               <Icon name="Bell" size={16} />
-              {unreadCount > 0 && <span className="notification-dot">{unreadCount > 9 ? "9+" : unreadCount}</span>}
+              {unreadCount > 0 && (
+                <span className="notification-dot">{unreadCount > 9 ? "9+" : unreadCount}</span>
+              )}
             </button>
           </div>
         </header>
 
-        {/* Mobile bottom nav */}
-        <div className="md:hidden fixed bottom-0 left-0 right-0 z-40 flex border-t bg-card" style={{ borderColor: "hsl(216,20%,88%)" }}>
-          {visibleNav.filter((i) => i.id !== "admin").slice(0, 5).map((item) => (
-            <button key={item.id} onClick={() => navigate(item.id)}
-              className="flex-1 flex flex-col items-center justify-center py-2 gap-0.5 transition-colors"
-              style={{ color: active === item.id ? "hsl(213,80%,40%)" : "hsl(220,15%,55%)" }}>
-              <div className="relative">
-                <Icon name={item.icon} size={18} />
-                {item.id === "notifications" && unreadCount > 0 && (
-                  <span className="notification-dot">{unreadCount > 9 ? "9+" : unreadCount}</span>
-                )}
-              </div>
-              <span style={{ fontSize: "9px" }}>{item.label}</span>
-            </button>
-          ))}
-        </div>
-
-        <div className="flex-1 overflow-y-auto pb-16 md:pb-0">
+        <div className="flex-1 overflow-y-auto">
           <div key={active} className="section-enter h-full">{renderPage()}</div>
         </div>
       </main>
