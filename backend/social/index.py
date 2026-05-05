@@ -185,7 +185,7 @@ def handler(event: dict, context) -> dict:
             f"""
             SELECT n.id, n.type, n.is_read, n.created_at,
                    a.full_name, a.job_title,
-                   p.text, n.post_id, n.comment_id
+                   p.text, n.post_id, n.comment_id, n.actor_id
             FROM {SCHEMA}.notifications n
             LEFT JOIN {SCHEMA}.users a ON a.id = n.actor_id
             LEFT JOIN {SCHEMA}.posts p ON p.id = n.post_id
@@ -223,12 +223,13 @@ def handler(event: dict, context) -> dict:
 
         notifs = []
         for r in rows:
-            nid, ntype, is_read, created_at, actor_name, actor_title, post_text, post_id, comment_id = r
+            nid, ntype, is_read, created_at, actor_name, actor_title, post_text, post_id, comment_id, actor_id = r
             notifs.append({
                 "id": nid,
                 "type": ntype,
                 "is_read": is_read,
                 "created_at": str(created_at),
+                "actor_id": actor_id,
                 "actor_name": actor_name or "Пользователь",
                 "actor_title": actor_title or "",
                 "post_preview": (post_text[:80] + "…") if post_text and len(post_text) > 80 else post_text,
@@ -747,5 +748,59 @@ def handler(event: dict, context) -> dict:
             pass
         conn.close()
         return ok({"ok": True})
+
+    # --- blacklist ---
+    if action == "blacklist_add":
+        if not token: return err(401, "Не авторизован")
+        target_id = body.get("user_id")
+        if not target_id: return err(400, "user_id обязателен")
+        conn = get_conn(); cur = conn.cursor()
+        user = get_user_by_token(cur, token)
+        if not user: conn.close(); return err(401, "Сессия истекла")
+        uid = user[0]
+        if uid == int(target_id): conn.close(); return err(400, "Нельзя добавить себя")
+        cur.execute(f"INSERT INTO {SCHEMA}.blacklist (user_id, blocked_id) VALUES (%s,%s) ON CONFLICT DO NOTHING", (uid, int(target_id)))
+        cur.execute(f"DELETE FROM {SCHEMA}.follows WHERE (follower_id=%s AND following_id=%s) OR (follower_id=%s AND following_id=%s)", (uid, int(target_id), int(target_id), uid))
+        conn.commit(); conn.close()
+        return ok({"blocked": True})
+
+    if action == "blacklist_remove":
+        if not token: return err(401, "Не авторизован")
+        target_id = body.get("user_id")
+        if not target_id: return err(400, "user_id обязателен")
+        conn = get_conn(); cur = conn.cursor()
+        user = get_user_by_token(cur, token)
+        if not user: conn.close(); return err(401, "Сессия истекла")
+        uid = user[0]
+        cur.execute(f"DELETE FROM {SCHEMA}.blacklist WHERE user_id=%s AND blocked_id=%s", (uid, int(target_id)))
+        conn.commit(); conn.close()
+        return ok({"blocked": False})
+
+    if action == "blacklist_list":
+        if not token: return err(401, "Не авторизован")
+        conn = get_conn(); cur = conn.cursor()
+        user = get_user_by_token(cur, token)
+        if not user: conn.close(); return err(401, "Сессия истекла")
+        uid = user[0]
+        cur.execute(f"""SELECT u.id, u.full_name, u.job_title, u.avatar_url, b.created_at
+            FROM {SCHEMA}.blacklist b JOIN {SCHEMA}.users u ON u.id=b.blocked_id
+            WHERE b.user_id=%s ORDER BY b.created_at DESC""", (uid,))
+        rows = cur.fetchall(); conn.close()
+        return ok({"users": [{"id": r[0], "full_name": r[1], "job_title": r[2] or "",
+            "avatar_url": r[3] or "", "blocked_at": str(r[4]),
+            "initials": "".join(w[0] for w in r[1].split() if w)[:2].upper()} for r in rows]})
+
+    if action == "blacklist_check":
+        if not token: return err(401, "Не авторизован")
+        target_id = body.get("user_id")
+        if not target_id: return err(400, "user_id обязателен")
+        conn = get_conn(); cur = conn.cursor()
+        user = get_user_by_token(cur, token)
+        if not user: conn.close(); return err(401, "Сессия истекла")
+        uid = user[0]
+        cur.execute(f"SELECT 1 FROM {SCHEMA}.blacklist WHERE user_id=%s AND blocked_id=%s", (uid, int(target_id)))
+        blocked = cur.fetchone() is not None
+        conn.close()
+        return ok({"blocked": blocked})
 
     return err(400, "Неизвестное действие")
