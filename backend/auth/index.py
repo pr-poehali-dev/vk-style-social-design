@@ -194,4 +194,43 @@ def handler(event: dict, context) -> dict:
         user_id, email, fn, jt, b = row
         return ok({"id": user_id, "email": email, "full_name": fn, "job_title": jt or "", "bio": b or ""})
 
+    # --- reset_password_request (запрос кода) ---
+    if action == "reset_password_request":
+        email = body.get("email", "").strip().lower()
+        if not email: return err(400, "Введите email")
+        conn = get_conn(); cur = conn.cursor()
+        cur.execute(f"SELECT id, full_name FROM {SCHEMA}.users WHERE email=%s", (email,))
+        row = cur.fetchone()
+        if not row: conn.close(); return err(404, "Пользователь с таким email не найден")
+        user_id, full_name = row
+        code = secrets.token_hex(3).upper()  # 6-значный hex код
+        cur.execute(f"INSERT INTO {SCHEMA}.password_resets (user_id, code) VALUES (%s,%s)", (user_id, code))
+        conn.commit(); conn.close()
+        # В реальном проекте здесь была бы отправка email
+        # Для демо возвращаем код прямо (в продакшн убрать!)
+        return ok({"ok": True, "code": code, "message": f"Код для сброса пароля: {code}", "full_name": full_name})
+
+    # --- reset_password_confirm (применение кода) ---
+    if action == "reset_password_confirm":
+        email = body.get("email", "").strip().lower()
+        code = body.get("code", "").strip().upper()
+        new_password = body.get("new_password", "")
+        if not email or not code or not new_password: return err(400, "Заполните все поля")
+        if len(new_password) < 6: return err(400, "Пароль должен быть не менее 6 символов")
+        conn = get_conn(); cur = conn.cursor()
+        cur.execute(f"SELECT u.id FROM {SCHEMA}.users u JOIN {SCHEMA}.password_resets pr ON pr.user_id=u.id WHERE u.email=%s AND pr.code=%s AND pr.used=FALSE AND pr.expires_at>NOW() ORDER BY pr.created_at DESC LIMIT 1", (email, code))
+        row = cur.fetchone()
+        if not row: conn.close(); return err(400, "Неверный или истёкший код")
+        user_id = row[0]
+        pw_hash = hash_password(new_password)
+        cur.execute(f"UPDATE {SCHEMA}.users SET password_hash=%s WHERE id=%s", (pw_hash, user_id))
+        cur.execute(f"UPDATE {SCHEMA}.password_resets SET used=TRUE WHERE user_id=%s AND code=%s", (user_id, code))
+        # Создаём новую сессию
+        session_token = secrets.token_hex(32)
+        cur.execute(f"INSERT INTO {SCHEMA}.sessions (token, user_id) VALUES (%s,%s)", (session_token, user_id))
+        cur.execute(f"SELECT email, full_name, job_title, bio FROM {SCHEMA}.users WHERE id=%s", (user_id,))
+        u = cur.fetchone()
+        conn.commit(); conn.close()
+        return ok({"token": session_token, "user": {"id": user_id, "email": u[0], "full_name": u[1], "job_title": u[2] or "", "bio": u[3] or ""}})
+
     return err(400, "Неизвестное действие")
