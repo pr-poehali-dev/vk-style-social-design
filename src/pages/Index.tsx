@@ -292,11 +292,12 @@ function AuthScreen({ onAuth }: { onAuth: (user: User, token: string) => void })
   );
 }
 
-type Section = "feed" | "friends" | "notifications" | "search" | "messages" | "profile" | "admin";
+type Section = "feed" | "friends" | "notifications" | "search" | "messages" | "profile" | "admin" | "groups";
 
 const navItems: { id: Section; label: string; icon: string; adminOnly?: boolean }[] = [
   { id: "feed", label: "Главная", icon: "LayoutDashboard" },
   { id: "friends", label: "Контакты", icon: "Users" },
+  { id: "groups", label: "Группы", icon: "Globe" },
   { id: "notifications", label: "Уведомления", icon: "Bell" },
   { id: "search", label: "Поиск", icon: "Search" },
   { id: "messages", label: "Сообщения", icon: "MessageSquare" },
@@ -486,6 +487,356 @@ function CreatePostModal({ userInitials, onClose, onCreated }: { userInitials: s
   );
 }
 
+// ─── MediaViewer ──────────────────────────────────────────────────────────────
+function MediaViewer({ url, type, onClose }: { url: string; type: string; onClose: () => void }) {
+  useEffect(() => {
+    const handle = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
+    document.addEventListener("keydown", handle);
+    return () => document.removeEventListener("keydown", handle);
+  }, [onClose]);
+  return (
+    <div className="fixed inset-0 z-[100] flex items-center justify-center" style={{ background: "rgba(0,0,0,0.95)" }} onClick={onClose}>
+      <button className="absolute top-4 right-4 w-10 h-10 rounded-full flex items-center justify-center z-10" style={{ background: "rgba(255,255,255,0.15)", color: "white" }} onClick={onClose}>
+        <Icon name="X" size={20} />
+      </button>
+      <div onClick={(e) => e.stopPropagation()} className="max-w-full max-h-full flex items-center justify-center p-4">
+        {type === "video"
+          ? <video src={url} controls autoPlay className="max-w-screen max-h-screen rounded-lg" style={{ maxWidth: "95vw", maxHeight: "90vh" }} />
+          : <img src={url} alt="media" className="rounded-lg" style={{ maxWidth: "95vw", maxHeight: "90vh", objectFit: "contain" }} />}
+      </div>
+    </div>
+  );
+}
+
+// ─── ShareModal ───────────────────────────────────────────────────────────────
+function ShareModal({ postId, text, onClose }: { postId: number; text: string; onClose: () => void }) {
+  const url = window.location.href;
+  const shortText = text ? text.slice(0, 80) : "Пост из NEXUS";
+  const socials = [
+    { name: "ВКонтакте", icon: "Globe", color: "hsl(213,90%,50%)", href: `https://vk.com/share.php?url=${encodeURIComponent(url)}&title=${encodeURIComponent(shortText)}` },
+    { name: "Telegram", icon: "Send", color: "hsl(200,90%,45%)", href: `https://t.me/share/url?url=${encodeURIComponent(url)}&text=${encodeURIComponent(shortText)}` },
+    { name: "Twitter/X", icon: "Twitter", color: "hsl(210,90%,40%)", href: `https://twitter.com/intent/tweet?url=${encodeURIComponent(url)}&text=${encodeURIComponent(shortText)}` },
+    { name: "WhatsApp", icon: "MessageCircle", color: "hsl(142,70%,38%)", href: `https://wa.me/?text=${encodeURIComponent(shortText + " " + url)}` },
+    { name: "LinkedIn", icon: "Briefcase", color: "hsl(210,80%,40%)", href: `https://www.linkedin.com/sharing/share-offsite/?url=${encodeURIComponent(url)}` },
+  ];
+  const copyLink = () => { navigator.clipboard.writeText(url).catch(() => {}); alert("Ссылка скопирована!"); };
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: "rgba(0,0,0,0.6)" }} onClick={onClose}>
+      <div className="w-full max-w-sm rounded-xl p-5" style={{ background: "white", border: "1px solid hsl(216,20%,88%)" }} onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="font-semibold text-sm">Поделиться</h3>
+          <button onClick={onClose}><Icon name="X" size={16} style={{ color: "hsl(220,15%,55%)" }} /></button>
+        </div>
+        <div className="grid grid-cols-5 gap-3 mb-4">
+          {socials.map((s) => (
+            <a key={s.name} href={s.href} target="_blank" rel="noopener noreferrer" title={s.name}
+              className="flex flex-col items-center gap-1.5" onClick={() => { apiPost(POSTS_URL, { action: "share", post_id: postId }); }}>
+              <div className="w-11 h-11 rounded-full flex items-center justify-center" style={{ background: `${s.color}18`, border: `1.5px solid ${s.color}40` }}>
+                <Icon name={s.icon} size={20} style={{ color: s.color }} />
+              </div>
+              <span className="text-xs" style={{ color: "hsl(220,15%,55%)", fontSize: "9px" }}>{s.name}</span>
+            </a>
+          ))}
+        </div>
+        <div className="flex items-center gap-2 p-2.5 rounded-lg" style={{ background: "hsl(216,20%,96%)" }}>
+          <span className="flex-1 text-xs truncate" style={{ color: "hsl(220,15%,55%)" }}>{url}</span>
+          <button className="btn-primary text-xs px-3 py-1.5 flex-shrink-0" onClick={copyLink}>Скопировать</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── UsersListModal ───────────────────────────────────────────────────────────
+function UsersListModal({ title, users, onClose, onFollowToggle }: {
+  title: string;
+  users: { id: number; full_name: string; job_title: string; avatar_url: string; initials: string; is_following?: boolean }[];
+  onClose: () => void;
+  onFollowToggle?: (uid: number, following: boolean) => void;
+}) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: "rgba(0,0,0,0.6)" }} onClick={onClose}>
+      <div className="w-full max-w-sm rounded-xl" style={{ background: "white", border: "1px solid hsl(216,20%,88%)", maxHeight: "70vh", display: "flex", flexDirection: "column" }} onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-center justify-between px-4 py-3 border-b" style={{ borderColor: "hsl(216,20%,88%)" }}>
+          <h3 className="font-semibold text-sm">{title} · {users.length}</h3>
+          <button onClick={onClose}><Icon name="X" size={16} style={{ color: "hsl(220,15%,55%)" }} /></button>
+        </div>
+        <div className="overflow-y-auto flex-1">
+          {users.length === 0 && <div className="text-center py-10 text-sm" style={{ color: "hsl(220,15%,55%)" }}>Пока никого нет</div>}
+          {users.map((u) => (
+            <div key={u.id} className="flex items-center gap-3 px-4 py-3 border-b" style={{ borderColor: "hsl(216,20%,94%)" }}>
+              <Avatar initials={u.initials} avatarUrl={u.avatar_url} size="sm" />
+              <div className="flex-1 min-w-0">
+                <div className="font-medium text-sm truncate">{u.full_name}</div>
+                <div className="text-xs truncate" style={{ color: "hsl(220,15%,55%)" }}>{u.job_title || "Участник"}</div>
+              </div>
+              {onFollowToggle && (
+                <button className={u.is_following ? "btn-outline text-xs px-3 py-1" : "btn-primary text-xs px-3 py-1"}
+                  onClick={async () => {
+                    const action = u.is_following ? "unfollow" : "follow";
+                    const r = await apiPost(SOCIAL_URL, { action, user_id: u.id });
+                    if (r.ok) onFollowToggle(u.id, !u.is_following);
+                  }}>
+                  {u.is_following ? "Подписан" : "+"}
+                </button>
+              )}
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── Groups Page ──────────────────────────────────────────────────────────────
+interface Group { id: number; name: string; description: string; avatar_url: string; members_count: number; owner_id: number; is_member: boolean; initials: string; }
+interface GroupPost { id: number; text: string; media_url: string; media_type: string; likes_count: number; created_at: string; author: PostAuthor; }
+
+function GroupDetailPage({ group, currentUser, onBack }: { group: Group; currentUser: User | null; onBack: () => void }) {
+  const [posts, setPosts] = useState<GroupPost[]>([]);
+  const [members, setMembers] = useState<{ id: number; full_name: string; job_title: string; avatar_url: string; initials: string; role: string }[]>([]);
+  const [tab, setTab] = useState<"posts" | "members">("posts");
+  const [isMember, setIsMember] = useState(group.is_member);
+  const [membersCount, setMembersCount] = useState(group.members_count);
+  const [newPostText, setNewPostText] = useState("");
+  const [showCreate, setShowCreate] = useState(false);
+  const [mediaFile, setMediaFile] = useState<File | null>(null);
+  const [mediaPreview, setMediaPreview] = useState("");
+  const [posting, setPosting] = useState(false);
+  const [mediaViewer, setMediaViewer] = useState<{ url: string; type: string } | null>(null);
+  const fileRef = { current: null as HTMLInputElement | null };
+
+  useEffect(() => {
+    apiPost(SOCIAL_URL, { action: "group_posts", group_id: group.id }).then((r) => setPosts((r.data.posts as GroupPost[]) || []));
+    apiPost(SOCIAL_URL, { action: "group_members", group_id: group.id }).then((r) => setMembers((r.data.members as typeof members) || []));
+  }, [group.id]);
+
+  const handleJoin = async () => {
+    const action = isMember ? "group_leave" : "group_join";
+    const r = await apiPost(SOCIAL_URL, { action, group_id: group.id });
+    if (r.ok) { setIsMember(!isMember); setMembersCount(r.data.members_count as number); }
+  };
+
+  const handlePost = async () => {
+    if (!newPostText.trim() && !mediaFile) return;
+    setPosting(true);
+    let media_url = "", media_type = "";
+    if (mediaFile) {
+      const b64 = await readFileAsBase64(mediaFile);
+      const r2 = await apiPost(SOCIAL_URL, { action: "upload_media", file_data: b64, file_type: mediaFile.type });
+      if (r2.ok) { media_url = r2.data.url as string; media_type = r2.data.media_type as string; }
+    }
+    const r = await apiPost(SOCIAL_URL, { action: "group_post_create", group_id: group.id, text: newPostText.trim(), media_url, media_type });
+    setPosting(false);
+    if (r.ok) { setPosts((prev) => [r.data.post as GroupPost, ...prev]); setNewPostText(""); setMediaFile(null); setMediaPreview(""); setShowCreate(false); }
+  };
+
+  return (
+    <div className="max-w-2xl mx-auto px-4 py-4">
+      {mediaViewer && <MediaViewer url={mediaViewer.url} type={mediaViewer.type} onClose={() => setMediaViewer(null)} />}
+      <input ref={(el) => { fileRef.current = el; }} type="file" accept="image/*,video/*" className="hidden" onChange={async (e) => { const f = e.target.files?.[0]; if (!f) return; setMediaFile(f); setMediaPreview(await readFileAsBase64(f)); }} />
+
+      <button className="flex items-center gap-2 text-sm mb-4" style={{ color: "hsl(213,80%,40%)" }} onClick={onBack}>
+        <Icon name="ArrowLeft" size={16} />Назад
+      </button>
+
+      {/* Group header */}
+      <div className="post-card mb-4">
+        <div className="h-20 rounded-lg -mx-5 -mt-5 mb-4" style={{ background: "linear-gradient(135deg, hsl(213,80%,25%) 0%, hsl(270,60%,35%) 100%)" }} />
+        <div className="flex items-end gap-4 -mt-8 mb-3">
+          <div className="w-14 h-14 rounded-xl border-4 border-card flex items-center justify-center text-white font-bold text-lg flex-shrink-0" style={{ background: getAvatarColor(group.initials) }}>
+            {group.initials}
+          </div>
+          <div className="flex-1 pb-1">
+            <h2 className="font-bold text-base">{group.name}</h2>
+            <div className="text-xs" style={{ color: "hsl(220,15%,55%)" }}>{membersCount} участников</div>
+          </div>
+          {currentUser && (
+            <button className={isMember ? "btn-outline text-xs px-4 py-2" : "btn-primary text-xs px-4 py-2"} onClick={handleJoin}>
+              {isMember ? "Выйти" : "Вступить"}
+            </button>
+          )}
+        </div>
+        {group.description && <p className="text-sm" style={{ color: "hsl(220,25%,30%)" }}>{group.description}</p>}
+      </div>
+
+      {/* Tabs */}
+      <div className="flex gap-2 mb-4">
+        {(["posts", "members"] as const).map((t) => (
+          <button key={t} onClick={() => setTab(t)} className={tab === t ? "btn-primary text-xs px-4 py-2" : "btn-outline text-xs px-4 py-2"}>
+            {{ posts: "Публикации", members: "Участники" }[t]}
+          </button>
+        ))}
+      </div>
+
+      {tab === "posts" && (
+        <>
+          {isMember && (
+            <div className="post-card mb-4">
+              {!showCreate ? (
+                <button className="w-full text-left px-4 py-2.5 rounded-full border text-sm" style={{ borderColor: "hsl(216,20%,85%)", color: "hsl(220,15%,55%)" }} onClick={() => setShowCreate(true)}>
+                  Написать в группе...
+                </button>
+              ) : (
+                <div>
+                  <textarea className="w-full px-3 py-2 rounded-lg border text-sm outline-none resize-none" style={{ borderColor: "hsl(216,20%,85%)", minHeight: 80 }}
+                    placeholder="Текст публикации..." value={newPostText} onChange={(e) => setNewPostText(e.target.value)} />
+                  {mediaPreview && (
+                    <div className="relative mt-2">
+                      {mediaFile?.type.startsWith("video/") ? <video src={mediaPreview} className="w-full max-h-40 rounded-lg" controls /> : <img src={mediaPreview} className="w-full max-h-40 object-cover rounded-lg" />}
+                      <button className="absolute top-1 right-1 w-6 h-6 rounded-full flex items-center justify-center" style={{ background: "rgba(0,0,0,0.6)", color: "white" }} onClick={() => { setMediaFile(null); setMediaPreview(""); }}>
+                        <Icon name="X" size={12} />
+                      </button>
+                    </div>
+                  )}
+                  <div className="flex justify-between mt-2">
+                    <button className="btn-outline text-xs px-3 py-1.5 flex items-center gap-1.5" onClick={() => fileRef.current?.click()}>
+                      <Icon name="Image" size={12} />Фото/Видео
+                    </button>
+                    <div className="flex gap-2">
+                      <button className="btn-outline text-xs px-3 py-1.5" onClick={() => { setShowCreate(false); setNewPostText(""); setMediaFile(null); setMediaPreview(""); }}>Отмена</button>
+                      <button className="btn-primary text-xs px-3 py-1.5" onClick={handlePost} disabled={posting}>
+                        {posting ? "Публикация..." : "Опубликовать"}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+          <div className="space-y-4">
+            {posts.map((p) => (
+              <div key={p.id} className="post-card">
+                <div className="flex items-center gap-3 mb-3">
+                  <Avatar initials={p.author.initials} avatarUrl={p.author.avatar_url} size="sm" />
+                  <div>
+                    <div className="font-medium text-sm">{p.author.full_name}</div>
+                    <div className="text-xs" style={{ color: "hsl(220,15%,60%)" }}>{timeAgo(p.created_at)}</div>
+                  </div>
+                </div>
+                {p.text && <p className="text-sm mb-2" style={{ color: "hsl(220,25%,20%)" }}>{p.text}</p>}
+                {p.media_url && p.media_type === "image" && (
+                  <img src={p.media_url} className="w-full rounded-lg max-h-80 object-cover cursor-pointer" onClick={() => setMediaViewer({ url: p.media_url, type: "image" })} />
+                )}
+                {p.media_url && p.media_type === "video" && (
+                  <video src={p.media_url} controls className="w-full rounded-lg max-h-80 cursor-pointer" onClick={(e) => { e.preventDefault(); setMediaViewer({ url: p.media_url, type: "video" }); }} />
+                )}
+              </div>
+            ))}
+            {posts.length === 0 && <div className="text-center py-10 text-sm" style={{ color: "hsl(220,15%,55%)" }}>Публикаций пока нет</div>}
+          </div>
+        </>
+      )}
+
+      {tab === "members" && (
+        <div className="space-y-2">
+          {members.map((m) => (
+            <div key={m.id} className="post-card flex items-center gap-3">
+              <Avatar initials={m.initials} avatarUrl={m.avatar_url} size="sm" />
+              <div className="flex-1">
+                <div className="font-medium text-sm">{m.full_name}</div>
+                <div className="text-xs" style={{ color: "hsl(220,15%,55%)" }}>{m.job_title || m.role}</div>
+              </div>
+              {m.role === "owner" && <span className="text-xs px-2 py-0.5 rounded-full" style={{ background: "hsl(213,80%,94%)", color: "hsl(213,80%,40%)" }}>Владелец</span>}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function GroupsPage({ currentUser }: { currentUser: User | null }) {
+  const [groups, setGroups] = useState<Group[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [query, setQuery] = useState("");
+  const [activeGroup, setActiveGroup] = useState<Group | null>(null);
+  const [showCreate, setShowCreate] = useState(false);
+  const [newGroupName, setNewGroupName] = useState("");
+  const [newGroupDesc, setNewGroupDesc] = useState("");
+  const [creating, setCreating] = useState(false);
+
+  useEffect(() => {
+    apiPost(SOCIAL_URL, { action: "groups_list" }).then((r) => {
+      setGroups((r.data.groups as Group[]) || []);
+      setLoading(false);
+    });
+  }, []);
+
+  const handleSearch = async (q: string) => {
+    setQuery(q);
+    const r = await apiPost(SOCIAL_URL, { action: "groups_list", q });
+    setGroups((r.data.groups as Group[]) || []);
+  };
+
+  const handleCreate = async () => {
+    if (!newGroupName.trim()) return;
+    setCreating(true);
+    const r = await apiPost(SOCIAL_URL, { action: "group_create", name: newGroupName.trim(), description: newGroupDesc.trim() });
+    setCreating(false);
+    if (r.ok && r.data.group) { setGroups((prev) => [r.data.group as Group, ...prev]); setShowCreate(false); setNewGroupName(""); setNewGroupDesc(""); }
+  };
+
+  if (activeGroup) return <GroupDetailPage group={activeGroup} currentUser={currentUser} onBack={() => setActiveGroup(null)} />;
+
+  return (
+    <div className="max-w-2xl mx-auto px-4 py-5">
+      {showCreate && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: "rgba(0,0,0,0.6)" }} onClick={() => setShowCreate(false)}>
+          <div className="w-full max-w-md rounded-xl p-5" style={{ background: "white" }} onClick={(e) => e.stopPropagation()}>
+            <h3 className="font-semibold text-base mb-4">Создать группу</h3>
+            <input className="w-full px-3 py-2.5 rounded-lg border text-sm mb-3 outline-none" style={{ borderColor: "hsl(216,20%,85%)" }} placeholder="Название группы *" value={newGroupName} onChange={(e) => setNewGroupName(e.target.value)} />
+            <textarea className="w-full px-3 py-2.5 rounded-lg border text-sm mb-4 outline-none resize-none" style={{ borderColor: "hsl(216,20%,85%)", minHeight: 80 }} placeholder="Описание (необязательно)" value={newGroupDesc} onChange={(e) => setNewGroupDesc(e.target.value)} />
+            <div className="flex gap-2">
+              <button className="btn-outline flex-1 py-2" onClick={() => setShowCreate(false)}>Отмена</button>
+              <button className="btn-primary flex-1 py-2" onClick={handleCreate} disabled={creating || !newGroupName.trim()}>
+                {creating ? "Создание..." : "Создать"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      <div className="flex items-center gap-3 mb-4">
+        <div className="relative flex-1">
+          <Icon name="Search" size={14} className="absolute left-3 top-1/2 -translate-y-1/2" style={{ color: "hsl(220,15%,60%)" }} />
+          <input className="w-full pl-8 pr-3 py-2 rounded-lg border text-sm outline-none" style={{ borderColor: "hsl(216,20%,85%)" }} placeholder="Поиск групп..." value={query} onChange={(e) => handleSearch(e.target.value)} />
+        </div>
+        {currentUser && <button className="btn-primary text-xs px-4 py-2 flex items-center gap-1.5" onClick={() => setShowCreate(true)}><Icon name="Plus" size={13} />Создать</button>}
+      </div>
+
+      {loading && [1,2,3].map((i) => <div key={i} className="h-20 rounded-lg shimmer mb-2" />)}
+      {!loading && groups.length === 0 && (
+        <div className="text-center py-12" style={{ color: "hsl(220,15%,55%)" }}>
+          <Icon name="Users" size={36} className="mx-auto mb-3 opacity-30" />
+          <div className="text-sm font-medium">Групп пока нет</div>
+          {currentUser && <button className="btn-primary text-xs px-4 py-2 mt-3" onClick={() => setShowCreate(true)}>Создать первую группу</button>}
+        </div>
+      )}
+      <div className="space-y-3">
+        {groups.map((g) => (
+          <div key={g.id} className="post-card flex items-center gap-4 cursor-pointer hover:shadow-md transition-shadow" onClick={() => setActiveGroup(g)}>
+            <div className="w-12 h-12 rounded-xl flex items-center justify-center text-white font-bold text-base flex-shrink-0" style={{ background: getAvatarColor(g.initials) }}>
+              {g.initials}
+            </div>
+            <div className="flex-1 min-w-0">
+              <div className="font-semibold text-sm">{g.name}</div>
+              <div className="text-xs truncate" style={{ color: "hsl(220,15%,55%)" }}>{g.members_count} участников · {g.description || "Группа NEXUS"}</div>
+            </div>
+            <div className="flex-shrink-0">
+              {g.is_member ? (
+                <span className="text-xs px-2.5 py-1 rounded-full" style={{ background: "hsl(142,60%,93%)", color: "hsl(142,70%,35%)" }}>Участник</span>
+              ) : (
+                <span className="text-xs px-2.5 py-1 rounded-full" style={{ background: "hsl(216,20%,94%)", color: "hsl(220,15%,45%)" }}>Вступить</span>
+              )}
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function PostCard({ post, onLike, onCommentAdded, onDelete, userInitials, userAvatarUrl }: {
   post: Post;
   onLike: (id: number) => void;
@@ -503,6 +854,11 @@ function PostCard({ post, onLike, onCommentAdded, onDelete, userInitials, userAv
   const [sharing, setSharing] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
+  const [mediaViewer, setMediaViewer] = useState<{ url: string; type: string } | null>(null);
+  const [showShare, setShowShare] = useState(false);
+  const [likesUsers, setLikesUsers] = useState<{ id: number; full_name: string; job_title: string; avatar_url: string; initials: string }[]>([]);
+  const [showLikes, setShowLikes] = useState(false);
+  const [loadingLikes, setLoadingLikes] = useState(false);
 
   const toggleComments = async () => {
     if (!showComments && comments.length === 0) {
@@ -526,19 +882,15 @@ function PostCard({ post, onLike, onCommentAdded, onDelete, userInitials, userAv
     }
   };
 
-  const handleShare = async () => {
-    setSharing(true);
-    const pageUrl = window.location.href;
-    const shareText = post.text ? `${post.text.slice(0, 100)}... — NEXUS` : "Пост из NEXUS";
-    if (navigator.share) {
-      try { await navigator.share({ title: "NEXUS", text: shareText, url: pageUrl }); } catch { /* cancelled */ }
-    } else {
-      await navigator.clipboard.writeText(pageUrl).catch(() => {});
-      alert("Ссылка скопирована в буфер обмена");
-    }
-    const r = await apiPost(POSTS_URL, { action: "share", post_id: post.id });
-    if (r.ok) setShareCount(r.data.share_count as number || shareCount + 1);
-    setSharing(false);
+  const handleShare = () => setShowShare(true);
+
+  const handleShowLikes = async () => {
+    if (post.likes_count === 0) return;
+    setLoadingLikes(true);
+    setShowLikes(true);
+    const r = await apiPost(POSTS_URL, { action: "get_likes_users", post_id: post.id });
+    setLikesUsers((r.data.users as typeof likesUsers) || []);
+    setLoadingLikes(false);
   };
 
   const handleDelete = async () => {
@@ -551,6 +903,12 @@ function PostCard({ post, onLike, onCommentAdded, onDelete, userInitials, userAv
 
   return (
     <div className="post-card">
+      {mediaViewer && <MediaViewer url={mediaViewer.url} type={mediaViewer.type} onClose={() => setMediaViewer(null)} />}
+      {showShare && <ShareModal postId={post.id} text={post.text} onClose={() => { setShowShare(false); setShareCount(c => c + 1); }} />}
+      {showLikes && (
+        <UsersListModal title="Лайки" users={loadingLikes ? [] : likesUsers} onClose={() => setShowLikes(false)} />
+      )}
+
       <div className="flex items-start gap-3">
         <Avatar initials={post.author.initials} avatarUrl={post.author.avatar_url} />
         <div className="flex-1 min-w-0">
@@ -577,10 +935,23 @@ function PostCard({ post, onLike, onCommentAdded, onDelete, userInitials, userAv
 
       {post.text && <p className="mt-3 text-sm leading-relaxed whitespace-pre-wrap" style={{ color: "hsl(220,25%,20%)" }}>{post.text}</p>}
       {post.media_url && post.media_type === "image" && (
-        <img src={post.media_url} alt="media" className="mt-3 w-full rounded-xl object-cover max-h-96" style={{ cursor: "pointer" }} onClick={() => window.open(post.media_url, "_blank")} />
+        <div className="mt-3 relative cursor-pointer" onClick={() => setMediaViewer({ url: post.media_url!, type: "image" })}>
+          <img src={post.media_url} alt="media" className="w-full rounded-xl object-cover" style={{ maxHeight: "480px" }} />
+          <div className="absolute inset-0 rounded-xl flex items-center justify-center opacity-0 hover:opacity-100 transition-opacity" style={{ background: "rgba(0,0,0,0.15)" }}>
+            <div className="w-10 h-10 rounded-full flex items-center justify-center" style={{ background: "rgba(0,0,0,0.5)", color: "white" }}>
+              <Icon name="Maximize2" size={18} />
+            </div>
+          </div>
+        </div>
       )}
       {post.media_url && post.media_type === "video" && (
-        <video src={post.media_url} controls className="mt-3 w-full rounded-xl max-h-96" />
+        <div className="mt-3 relative">
+          <video src={post.media_url} controls className="w-full rounded-xl" style={{ maxHeight: "480px" }} />
+          <button className="absolute top-2 right-2 w-8 h-8 rounded-full flex items-center justify-center" style={{ background: "rgba(0,0,0,0.5)", color: "white" }}
+            onClick={() => setMediaViewer({ url: post.media_url!, type: "video" })}>
+            <Icon name="Maximize2" size={14} />
+          </button>
+        </div>
       )}
       {post.tags.length > 0 && (
         <div className="flex flex-wrap gap-1.5 mt-3">
@@ -591,12 +962,13 @@ function PostCard({ post, onLike, onCommentAdded, onDelete, userInitials, userAv
         <span className="flex items-center gap-1"><Icon name="Eye" size={13} />{post.views_count.toLocaleString("ru")}</span>
         <div className="flex items-center gap-3">
           <button className="flex items-center gap-1.5 transition-colors" onClick={() => onLike(post.id)} style={{ color: post.liked ? "hsl(0,72%,51%)" : "hsl(220,15%,55%)" }}>
-            <Icon name="Heart" size={14} />{post.likes_count}
+            <Icon name="Heart" size={14} />
+            <span className={post.likes_count > 0 ? "cursor-pointer hover:underline" : ""} onClick={(e) => { e.stopPropagation(); handleShowLikes(); }}>{post.likes_count}</span>
           </button>
           <button className="flex items-center gap-1.5 transition-colors hover:text-blue-600" onClick={toggleComments} style={{ color: showComments ? "hsl(213,80%,40%)" : "hsl(220,15%,55%)" }}>
             <Icon name="MessageCircle" size={14} />{post.comments_count}
           </button>
-          <button className="flex items-center gap-1.5 hover:text-blue-600 transition-colors" onClick={handleShare} disabled={sharing}>
+          <button className="flex items-center gap-1.5 hover:text-blue-600 transition-colors" onClick={handleShare}>
             <Icon name="Share2" size={14} />{shareCount > 0 ? shareCount : ""}
           </button>
         </div>
@@ -961,8 +1333,11 @@ function MessagesPage({ currentUser }: { currentUser: User | null }) {
   const [loadingConvs, setLoadingConvs] = useState(true);
   const [loadingMsgs, setLoadingMsgs] = useState(false);
   const [sendingMedia, setSendingMedia] = useState(false);
+  const [mediaViewer, setMediaViewer] = useState<{ url: string; type: string } | null>(null);
+  const [showMobileChat, setShowMobileChat] = useState(false);
   const messagesEndRef = { current: null as HTMLDivElement | null };
   const fileRef = { current: null as HTMLInputElement | null };
+  const docRef = { current: null as HTMLInputElement | null };
 
   useEffect(() => {
     apiPost(SOCIAL_URL, { action: "chat_list" }).then((r) => {
@@ -975,8 +1350,15 @@ function MessagesPage({ currentUser }: { currentUser: User | null }) {
     if (messagesEndRef.current) messagesEndRef.current.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
+  // Push уведомления
+  useEffect(() => {
+    if (!("Notification" in window) || !currentUser) return;
+    if (Notification.permission === "default") Notification.requestPermission();
+  }, [currentUser]);
+
   const openConv = async (conv: Conversation) => {
     setActiveConv(conv);
+    setShowMobileChat(true);
     setLoadingMsgs(true);
     const r = await apiPost(SOCIAL_URL, { action: "chat_messages", conv_id: conv.id });
     setMessages((r.data.messages as ChatMessage[]) || []);
@@ -994,120 +1376,149 @@ function MessagesPage({ currentUser }: { currentUser: User | null }) {
       setMessages((prev) => [...prev, r.data.message as ChatMessage]);
       setNewMsg("");
       setConvs((prev) => prev.map((c) => c.id === activeConv.id
-        ? { ...c, last_message: newMsg.trim() || "📎 Медиафайл", last_at: new Date().toISOString() } : c));
+        ? { ...c, last_message: newMsg.trim() || "📎 Вложение", last_at: new Date().toISOString() } : c));
     }
   };
 
-  const handleMediaSend = async (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileSend = async (e: React.ChangeEvent<HTMLInputElement>, isDoc = false) => {
     const file = e.target.files?.[0];
     if (!file || !activeConv) return;
     setSendingMedia(true);
     const b64 = await readFileAsBase64(file);
-    const r = await apiPost(SOCIAL_URL, { action: "upload_media", file_data: b64, file_type: file.type });
+    let fileType = file.type;
+    if (isDoc && !fileType) fileType = "application/octet-stream";
+    const mediaType = fileType.startsWith("video/") ? "video" : fileType.startsWith("image/") ? "image" : "document";
+    const r = await apiPost(SOCIAL_URL, { action: "upload_media", file_data: b64, file_type: fileType });
     setSendingMedia(false);
-    if (r.ok) await sendMessage(r.data.url as string, r.data.media_type as string);
+    if (r.ok) await sendMessage(r.data.url as string, mediaType);
+    e.target.value = "";
   };
 
   const myInitials = currentUser ? getInitials(currentUser.full_name) : "?";
 
+  const ConvList = () => (
+    <div className="flex-1 overflow-y-auto">
+      {loadingConvs && [1,2,3].map((i) => <div key={i} className="h-16 mx-3 my-1 rounded-lg shimmer" />)}
+      {!loadingConvs && convs.length === 0 && (
+        <div className="text-center py-10 px-4" style={{ color: "hsl(220,15%,55%)" }}>
+          <Icon name="MessageSquare" size={28} className="mx-auto mb-2 opacity-30" />
+          <div className="text-xs">Найдите людей в Поиске и начните диалог</div>
+        </div>
+      )}
+      {convs.map((conv) => (
+        <button key={conv.id}
+          className={`w-full px-3 py-3 flex items-center gap-3 text-left transition-colors border-b ${activeConv?.id === conv.id ? "bg-blue-50" : "hover:bg-gray-50"}`}
+          style={{ borderColor: "hsl(216,20%,93%)" }}
+          onClick={() => openConv(conv)}>
+          <Avatar initials={conv.partner.initials} avatarUrl={conv.partner.avatar_url} size="sm" />
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center justify-between">
+              <span className="font-medium text-xs">{conv.partner.full_name}</span>
+              <span className="text-xs" style={{ color: "hsl(220,15%,60%)" }}>{timeAgo(conv.last_at)}</span>
+            </div>
+            <div className="text-xs truncate mt-0.5" style={{ color: "hsl(220,15%,55%)" }}>{conv.last_message}</div>
+          </div>
+        </button>
+      ))}
+    </div>
+  );
+
+  const ChatWindow = () => (
+    activeConv ? (
+      <div className="flex-1 flex flex-col min-w-0 h-full">
+        {mediaViewer && <MediaViewer url={mediaViewer.url} type={mediaViewer.type} onClose={() => setMediaViewer(null)} />}
+        <div className="px-4 py-3 border-b flex items-center gap-3 bg-card flex-shrink-0" style={{ borderColor: "hsl(216,20%,88%)" }}>
+          <button className="md:hidden p-1 rounded" style={{ color: "hsl(213,80%,40%)" }} onClick={() => setShowMobileChat(false)}>
+            <Icon name="ArrowLeft" size={18} />
+          </button>
+          <Avatar initials={activeConv.partner.initials} avatarUrl={activeConv.partner.avatar_url} size="sm" />
+          <div>
+            <div className="font-semibold text-sm">{activeConv.partner.full_name}</div>
+            <div className="text-xs" style={{ color: "hsl(220,15%,55%)" }}>{activeConv.partner.job_title}</div>
+          </div>
+        </div>
+
+        <div className="flex-1 overflow-y-auto px-3 py-4 space-y-2" style={{ background: "hsl(216,20%,97%)" }}>
+          {loadingMsgs && <div className="text-center text-xs py-4" style={{ color: "hsl(220,15%,60%)" }}>Загрузка...</div>}
+          {messages.map((msg) => (
+            <div key={msg.id} className={`flex items-end gap-2 ${msg.is_me ? "justify-end" : "justify-start"}`}>
+              {!msg.is_me && <Avatar initials={msg.sender_initials} avatarUrl={msg.sender_avatar} size="sm" />}
+              <div className={`max-w-xs md:max-w-sm ${msg.is_me ? "message-bubble-me" : "message-bubble-other"}`}>
+                {msg.media_url && msg.media_type === "image" && (
+                  <img src={msg.media_url} alt="media" className="rounded-lg max-w-full max-h-52 object-cover mb-1 cursor-pointer" onClick={() => setMediaViewer({ url: msg.media_url, type: "image" })} />
+                )}
+                {msg.media_url && msg.media_type === "video" && (
+                  <video src={msg.media_url} controls className="rounded-lg max-w-full max-h-52 mb-1" />
+                )}
+                {msg.media_url && msg.media_type === "document" && (
+                  <a href={msg.media_url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-2 px-3 py-2 rounded-lg mb-1" style={{ background: "rgba(255,255,255,0.2)" }}>
+                    <Icon name="FileText" size={16} />
+                    <span className="text-xs truncate">Документ</span>
+                  </a>
+                )}
+                {msg.text && <p className="px-4 py-2.5 text-sm break-words">{msg.text}</p>}
+                {!msg.text && msg.media_url && <div className="px-4 pb-1" />}
+                <div className="text-xs px-4 pb-2 text-right opacity-70">{timeAgo(msg.created_at)}</div>
+              </div>
+              {msg.is_me && <Avatar initials={myInitials} avatarUrl={currentUser?.avatar_url} size="sm" />}
+            </div>
+          ))}
+          <div ref={(el) => { messagesEndRef.current = el; }} />
+        </div>
+
+        <div className="px-3 py-2.5 border-t bg-card flex items-center gap-2 flex-shrink-0" style={{ borderColor: "hsl(216,20%,88%)" }}>
+          <div className="flex gap-1">
+            <button className="p-2 rounded-lg hover:bg-muted" onClick={() => fileRef.current?.click()} disabled={sendingMedia} title="Фото/Видео" style={{ color: "hsl(220,15%,50%)" }}>
+              {sendingMedia ? <Icon name="Loader" size={16} className="animate-spin" /> : <Icon name="Image" size={16} />}
+            </button>
+            <button className="p-2 rounded-lg hover:bg-muted" onClick={() => docRef.current?.click()} disabled={sendingMedia} title="Документ" style={{ color: "hsl(220,15%,50%)" }}>
+              <Icon name="Paperclip" size={16} />
+            </button>
+          </div>
+          <input
+            className="flex-1 px-4 py-2 rounded-full border text-sm outline-none focus:border-blue-400"
+            style={{ borderColor: "hsl(216,20%,85%)", color: "hsl(220,30%,15%)" }}
+            placeholder="Написать сообщение..."
+            value={newMsg}
+            onChange={(e) => setNewMsg(e.target.value)}
+            onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendMessage(); } }}
+          />
+          <button className="btn-primary px-3 py-2 rounded-full flex-shrink-0" onClick={() => sendMessage()} disabled={!newMsg.trim()}>
+            <Icon name="Send" size={15} />
+          </button>
+        </div>
+      </div>
+    ) : (
+      <div className="flex-1 hidden md:flex items-center justify-center" style={{ color: "hsl(220,15%,60%)" }}>
+        <div className="text-center">
+          <Icon name="MessageSquare" size={40} className="mx-auto mb-3 opacity-30" />
+          <div className="text-sm font-medium mb-1">Выберите диалог</div>
+          <div className="text-xs">Или найдите человека через Поиск</div>
+        </div>
+      </div>
+    )
+  );
+
   return (
     <div className="flex" style={{ height: "calc(100vh - 3rem)" }}>
-      <input ref={(el) => { fileRef.current = el; }} type="file" accept="image/*,video/*" className="hidden" onChange={handleMediaSend} />
+      <input ref={(el) => { fileRef.current = el; }} type="file" accept="image/*,video/*" className="hidden" onChange={(e) => handleFileSend(e, false)} />
+      <input ref={(el) => { docRef.current = el; }} type="file" accept="*/*" className="hidden" onChange={(e) => handleFileSend(e, true)} />
 
-      {/* Conversations list */}
-      <div className="w-72 flex-shrink-0 border-r flex flex-col" style={{ borderColor: "hsl(216,20%,88%)" }}>
+      {/* Desktop: side-by-side */}
+      <div className={`w-full md:w-72 flex-shrink-0 border-r flex flex-col ${showMobileChat ? "hidden md:flex" : "flex"}`} style={{ borderColor: "hsl(216,20%,88%)" }}>
         <div className="px-3 py-3 border-b flex-shrink-0" style={{ borderColor: "hsl(216,20%,88%)" }}>
           <div className="relative">
             <Icon name="Search" size={14} className="absolute left-3 top-1/2 -translate-y-1/2" style={{ color: "hsl(220,15%,60%)" }} />
             <input className="w-full pl-8 pr-3 py-2 rounded-md border text-xs outline-none bg-card" style={{ borderColor: "hsl(216,20%,87%)", color: "hsl(220,30%,20%)" }} placeholder="Поиск диалогов..." />
           </div>
         </div>
-        <div className="flex-1 overflow-y-auto">
-          {loadingConvs && [1,2,3].map((i) => <div key={i} className="h-16 mx-3 my-1 rounded-lg shimmer" />)}
-          {!loadingConvs && convs.length === 0 && (
-            <div className="text-center py-10 px-4" style={{ color: "hsl(220,15%,55%)" }}>
-              <Icon name="MessageSquare" size={28} className="mx-auto mb-2 opacity-30" />
-              <div className="text-xs">Найдите людей в Поиске и начните диалог</div>
-            </div>
-          )}
-          {convs.map((conv) => (
-            <button key={conv.id}
-              className={`w-full px-3 py-3 flex items-center gap-3 text-left transition-colors border-b ${activeConv?.id === conv.id ? "bg-blue-50" : "hover:bg-gray-50"}`}
-              style={{ borderColor: "hsl(216,20%,93%)" }}
-              onClick={() => openConv(conv)}
-            >
-              <Avatar initials={conv.partner.initials} avatarUrl={conv.partner.avatar_url} size="sm" />
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center justify-between">
-                  <span className="font-medium text-xs">{conv.partner.full_name}</span>
-                  <span className="text-xs" style={{ color: "hsl(220,15%,60%)" }}>{timeAgo(conv.last_at)}</span>
-                </div>
-                <div className="text-xs truncate mt-0.5" style={{ color: "hsl(220,15%,55%)" }}>{conv.last_message}</div>
-              </div>
-            </button>
-          ))}
-        </div>
+        <ConvList />
       </div>
 
-      {/* Chat window */}
-      {activeConv ? (
-        <div className="flex-1 flex flex-col min-w-0">
-          <div className="px-5 py-3 border-b flex items-center gap-3 bg-card flex-shrink-0" style={{ borderColor: "hsl(216,20%,88%)" }}>
-            <Avatar initials={activeConv.partner.initials} avatarUrl={activeConv.partner.avatar_url} size="sm" />
-            <div>
-              <div className="font-semibold text-sm">{activeConv.partner.full_name}</div>
-              <div className="text-xs" style={{ color: "hsl(220,15%,55%)" }}>{activeConv.partner.job_title}</div>
-            </div>
-          </div>
-
-          <div className="flex-1 overflow-y-auto px-5 py-4 space-y-3" style={{ background: "hsl(216,20%,97%)" }}>
-            {loadingMsgs && <div className="text-center text-xs" style={{ color: "hsl(220,15%,60%)" }}>Загрузка...</div>}
-            {messages.map((msg) => (
-              <div key={msg.id} className={`flex items-end gap-2 ${msg.is_me ? "justify-end" : "justify-start"}`}>
-                {!msg.is_me && <Avatar initials={msg.sender_initials} avatarUrl={msg.sender_avatar} size="sm" />}
-                <div className={`max-w-sm ${msg.is_me ? "message-bubble-me" : "message-bubble-other"}`}>
-                  {msg.media_url && msg.media_type === "image" && (
-                    <img src={msg.media_url} alt="media" className="rounded-lg max-w-full max-h-48 object-cover mb-1" />
-                  )}
-                  {msg.media_url && msg.media_type === "video" && (
-                    <video src={msg.media_url} controls className="rounded-lg max-w-full max-h-48 mb-1" />
-                  )}
-                  {msg.text && <p className="px-4 py-2.5 text-sm">{msg.text}</p>}
-                  {!msg.text && msg.media_url && <div className="px-4 pb-1" />}
-                  <div className="text-xs px-4 pb-2 text-right" style={{ color: msg.is_me ? "rgba(255,255,255,0.6)" : "hsl(220,15%,60%)" }}>{timeAgo(msg.created_at)}</div>
-                </div>
-                {msg.is_me && <Avatar initials={myInitials} avatarUrl={currentUser?.avatar_url} size="sm" />}
-              </div>
-            ))}
-            <div ref={(el) => { messagesEndRef.current = el; }} />
-          </div>
-
-          <div className="px-4 py-3 border-t bg-card flex items-center gap-2 flex-shrink-0" style={{ borderColor: "hsl(216,20%,88%)" }}>
-            <button className="btn-outline p-2" onClick={() => fileRef.current?.click()} disabled={sendingMedia} title="Прикрепить файл">
-              {sendingMedia ? <Icon name="Loader" size={15} className="animate-spin" /> : <Icon name="Paperclip" size={15} />}
-            </button>
-            <input
-              className="flex-1 px-4 py-2 rounded-full border text-sm outline-none focus:border-blue-400"
-              style={{ borderColor: "hsl(216,20%,85%)", color: "hsl(220,30%,15%)" }}
-              placeholder="Написать сообщение..."
-              value={newMsg}
-              onChange={(e) => setNewMsg(e.target.value)}
-              onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendMessage(); } }}
-            />
-            <button className="btn-primary px-4 py-2 rounded-full" onClick={() => sendMessage()} disabled={!newMsg.trim()}>
-              <Icon name="Send" size={15} />
-            </button>
-          </div>
-        </div>
-      ) : (
-        <div className="flex-1 flex items-center justify-center" style={{ color: "hsl(220,15%,60%)" }}>
-          <div className="text-center">
-            <Icon name="MessageSquare" size={40} className="mx-auto mb-3 opacity-30" />
-            <div className="text-sm font-medium mb-1">Выберите диалог</div>
-            <div className="text-xs">Или найдите человека через Поиск</div>
-          </div>
-        </div>
-      )}
+      {/* Chat — full screen on mobile when open */}
+      <div className={`flex-1 flex flex-col min-w-0 ${showMobileChat ? "flex" : "hidden md:flex"}`}>
+        <ChatWindow />
+      </div>
     </div>
   );
 }
@@ -1264,6 +1675,9 @@ function ProfilePage({ user, onUserUpdate }: { user?: User; onUserUpdate?: (u: U
   const [userPosts, setUserPosts] = useState<Post[]>([]);
   const [loadingPosts, setLoadingPosts] = useState(false);
   const [postView, setPostView] = useState<"grid" | "list">("grid");
+  const [followersModal, setFollowersModal] = useState<"followers" | "following" | null>(null);
+  const [followUsers, setFollowUsers] = useState<{ id: number; full_name: string; job_title: string; avatar_url: string; initials: string; is_following: boolean }[]>([]);
+  const [mediaViewer, setMediaViewer] = useState<{ url: string; type: string } | null>(null);
   const avatarInputRef = { current: null as HTMLInputElement | null };
 
   const displayName = user?.full_name || "Пользователь";
@@ -1301,6 +1715,14 @@ function ProfilePage({ user, onUserUpdate }: { user?: User; onUserUpdate?: (u: U
     if (stats) setStats({ ...stats, posts: Math.max(0, stats.posts - 1) });
   };
 
+  const openFollowModal = async (type: "followers" | "following") => {
+    setFollowersModal(type);
+    setFollowUsers([]);
+    const action = type === "followers" ? "get_followers" : "get_following";
+    const r = await apiPost(POSTS_URL, { action });
+    setFollowUsers((r.data.users as typeof followUsers) || []);
+  };
+
   const socials = [
     { key: "social_vk", label: "ВКонтакте", icon: "Globe", color: "hsl(213,90%,50%)", prefix: "https://vk.com/", value: user?.social_vk },
     { key: "social_tg", label: "Telegram", icon: "Send", color: "hsl(200,90%,45%)", prefix: "https://t.me/", value: user?.social_tg },
@@ -1322,48 +1744,61 @@ function ProfilePage({ user, onUserUpdate }: { user?: User; onUserUpdate?: (u: U
       {editOpen && user && (
         <EditProfileModal user={user} onClose={() => setEditOpen(false)} onSave={(u) => { onUserUpdate?.(u); }} />
       )}
+      {mediaViewer && <MediaViewer url={mediaViewer.url} type={mediaViewer.type} onClose={() => setMediaViewer(null)} />}
+      {followersModal && (
+        <UsersListModal
+          title={followersModal === "followers" ? "Подписчики" : "Подписки"}
+          users={followUsers}
+          onClose={() => setFollowersModal(null)}
+          onFollowToggle={(uid, following) => setFollowUsers((prev) => prev.map((u) => u.id === uid ? { ...u, is_following: following } : u))}
+        />
+      )}
     <div className="max-w-3xl mx-auto px-4 py-5">
-      <div className="post-card mb-4">
-        <div className="h-24 rounded-lg -mx-5 -mt-5 mb-4" style={{ background: "linear-gradient(135deg, hsl(221,55%,20%) 0%, hsl(213,80%,35%) 100%)" }} />
-        <div className="flex items-end gap-4 -mt-10 mb-4">
-          <div className="relative flex-shrink-0 group" onClick={() => avatarInputRef.current?.click()} style={{ cursor: "pointer" }}>
+      <div className="post-card mb-4 overflow-hidden">
+        {/* Cover */}
+        <div className="h-28 -mx-5 -mt-5 mb-0" style={{ background: "linear-gradient(135deg, hsl(221,55%,20%) 0%, hsl(213,80%,35%) 100%)" }} />
+        {/* Avatar row — below cover */}
+        <div className="flex items-center justify-between px-0 pt-3 pb-2">
+          <div className="relative flex-shrink-0 group -mt-10" onClick={() => avatarInputRef.current?.click()} style={{ cursor: "pointer" }}>
             {user?.avatar_url
-              ? <img src={user.avatar_url} alt={displayInitials} className="w-16 h-16 rounded-full border-4 border-card object-cover" />
-              : <div className="w-16 h-16 rounded-full border-4 border-card flex items-center justify-center text-base font-bold text-white" style={{ background: "hsl(213,80%,40%)" }}>{displayInitials}</div>}
+              ? <img src={user.avatar_url} alt={displayInitials} className="w-20 h-20 rounded-full border-4 object-cover" style={{ borderColor: "white" }} />
+              : <div className="w-20 h-20 rounded-full border-4 flex items-center justify-center text-xl font-bold text-white" style={{ background: "hsl(213,80%,40%)", borderColor: "white" }}>{displayInitials}</div>}
             <div className="absolute inset-0 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity" style={{ background: "rgba(0,0,0,0.45)" }}>
-              {uploadingAvatar ? <Icon name="Loader" size={18} style={{ color: "white" }} className="animate-spin" /> : <Icon name="Camera" size={18} style={{ color: "white" }} />}
+              {uploadingAvatar ? <Icon name="Loader" size={20} style={{ color: "white" }} className="animate-spin" /> : <Icon name="Camera" size={20} style={{ color: "white" }} />}
             </div>
           </div>
-          <div className="pb-1 flex-1 min-w-0">
-            <h1 className="font-bold text-lg">{displayName}</h1>
-            <p className="text-sm" style={{ color: "hsl(220,15%,50%)" }}>{displayTitle}</p>
-            {socials.length > 0 && (
-              <div className="flex items-center gap-2 mt-2 flex-wrap">
-                {socials.map((s) => (
-                  <a key={s.key} href={`${s.prefix}${s.value}`} target="_blank" rel="noopener noreferrer"
-                    className="flex items-center gap-1 text-xs px-2 py-0.5 rounded-full transition-opacity hover:opacity-75"
-                    style={{ background: `${s.color}15`, color: s.color, border: `1px solid ${s.color}30` }}>
-                    <Icon name={s.icon} size={11} />{s.label}
-                  </a>
-                ))}
-              </div>
-            )}
-          </div>
-          <div className="pb-1 flex gap-2 flex-shrink-0">
+          <div className="flex gap-2 items-center pt-1 flex-shrink-0">
             <button className="btn-primary text-xs px-4 py-2" onClick={() => setEditOpen(true)}>Редактировать</button>
           </div>
         </div>
-
-        {displayBio
-          ? <p className="text-sm leading-relaxed mb-4" style={{ color: "hsl(220,25%,25%)" }}>{displayBio}</p>
-          : <p className="text-sm leading-relaxed mb-4 italic cursor-pointer hover:underline" style={{ color: "hsl(220,15%,65%)" }} onClick={() => setEditOpen(true)}>Добавьте информацию о себе...</p>}
-
-        <div className="grid grid-cols-4 gap-3 pt-4 border-t" style={{ borderColor: "hsl(216,20%,90%)" }}>
-          {allStats.map((s) => (
-            <div key={s.label} className="text-center">
-              <div className="font-bold text-lg" style={{ color: "hsl(221,65%,22%)" }}>{s.value}</div>
-              <div className="text-xs" style={{ color: "hsl(220,15%,55%)" }}>{s.label}</div>
+        {/* Name + title — NOT touching cover */}
+        <div className="pt-1 pb-3">
+          <h1 className="font-bold text-xl leading-tight">{displayName}</h1>
+          <p className="text-sm mt-0.5" style={{ color: "hsl(220,15%,50%)" }}>{displayTitle}</p>
+          {socials.length > 0 && (
+            <div className="flex items-center gap-2 mt-2 flex-wrap">
+              {socials.map((s) => (
+                <a key={s.key} href={`${s.prefix}${s.value}`} target="_blank" rel="noopener noreferrer"
+                  className="flex items-center gap-1 text-xs px-2 py-0.5 rounded-full transition-opacity hover:opacity-75"
+                  style={{ background: `${s.color}15`, color: s.color, border: `1px solid ${s.color}30` }}>
+                  <Icon name={s.icon} size={11} />{s.label}
+                </a>
+              ))}
             </div>
+          )}
+          {displayBio && <p className="text-sm mt-2 leading-relaxed" style={{ color: "hsl(220,25%,25%)" }}>{displayBio}</p>}
+          {!displayBio && (
+            <p className="text-sm mt-2 italic cursor-pointer hover:underline" style={{ color: "hsl(220,15%,65%)" }} onClick={() => setEditOpen(true)}>Добавьте информацию о себе...</p>
+          )}
+        </div>
+
+        <div className="grid grid-cols-4 gap-3 pt-3 border-t" style={{ borderColor: "hsl(216,20%,90%)" }}>
+          {allStats.map((s, i) => (
+            <button key={s.label} className="text-center py-1 rounded-lg hover:bg-gray-50 transition-colors"
+              onClick={() => { if (i === 0) openFollowModal("followers"); else if (i === 1) openFollowModal("following"); }}>
+              <div className="font-bold text-lg" style={{ color: "hsl(221,65%,22%)" }}>{s.value}</div>
+              <div className="text-xs" style={{ color: i < 2 ? "hsl(213,80%,40%)" : "hsl(220,15%,55%)" }}>{s.label}</div>
+            </button>
           ))}
         </div>
       </div>
@@ -1410,7 +1845,8 @@ function ProfilePage({ user, onUserUpdate }: { user?: User; onUserUpdate?: (u: U
               <div className="text-xs font-medium mb-2" style={{ color: "hsl(220,15%,50%)" }}>Фото и видео</div>
               <div className="grid grid-cols-3 gap-1 mb-4">
                 {mediaOnly.map((p) => (
-                  <div key={p.id} className="relative aspect-square rounded-lg overflow-hidden bg-gray-100">
+                  <div key={p.id} className="relative aspect-square rounded-lg overflow-hidden bg-gray-100 cursor-pointer"
+                    onClick={() => setMediaViewer({ url: p.media_url!, type: p.media_type || "image" })}>
                     {p.media_type === "image"
                       ? <img src={p.media_url} alt="" className="w-full h-full object-cover" />
                       : <div className="w-full h-full flex items-center justify-center" style={{ background: "hsl(221,25%,18%)" }}>
@@ -1625,6 +2061,18 @@ function getInitials(name: string) {
   return name.split(" ").map((w) => w[0]).join("").slice(0, 2).toUpperCase();
 }
 
+function requestPushPermission() {
+  if ("Notification" in window && Notification.permission === "default") {
+    Notification.requestPermission();
+  }
+}
+
+function sendPushNotification(title: string, body: string) {
+  if ("Notification" in window && Notification.permission === "granted") {
+    new Notification(title, { body, icon: "/favicon.ico" });
+  }
+}
+
 export default function Index() {
   const [active, setActive] = useState<Section>("feed");
   const [currentUser, setCurrentUser] = useState<User | null>(null);
@@ -1658,9 +2106,16 @@ export default function Index() {
 
   useEffect(() => {
     if (!currentUser) return;
+    requestPushPermission();
+    let prevCount = 0;
     const fetchCount = () => {
       apiPost(SOCIAL_URL, { action: "unread_count" }).then((r) => {
-        setUnreadCount((r.data.count as number) || 0);
+        const count = (r.data.count as number) || 0;
+        if (count > prevCount && prevCount !== 0 && document.hidden) {
+          sendPushNotification("NEXUS", `У вас ${count} новых уведомлений`);
+        }
+        prevCount = count;
+        setUnreadCount(count);
       });
     };
     fetchCount();
@@ -1670,6 +2125,7 @@ export default function Index() {
 
   const handleAuth = (user: User, _token: string) => {
     setCurrentUser(user);
+    requestPushPermission();
     // Проверяем права
     setTimeout(() => {
       fetch(POSTS_URL, { method: "POST", headers: { "Content-Type": "application/json", "X-Auth-Token": localStorage.getItem("nexus_token") || "" }, body: JSON.stringify({ action: "admin_data" }) })
@@ -1704,6 +2160,7 @@ export default function Index() {
     switch (active) {
       case "feed": return <FeedPage currentUser={currentUser} />;
       case "friends": return <FriendsPage />;
+      case "groups": return <GroupsPage currentUser={currentUser} />;
       case "notifications": return <NotificationsPage />;
       case "search": return <SearchPage onStartChat={async (uid) => {
         const r = await apiPost(SOCIAL_URL, { action: "chat_start", partner_id: uid });
