@@ -597,9 +597,132 @@ function MessagesPage() {
   );
 }
 
-function ProfilePage({ user }: { user?: User }) {
-  const displayName = user?.full_name || "Андрей Козлов";
-  const displayTitle = user?.job_title || "Директор по развитию бизнеса";
+function EditProfileModal({
+  user,
+  onClose,
+  onSave,
+}: {
+  user: User;
+  onClose: () => void;
+  onSave: (updated: User) => void;
+}) {
+  const [fullName, setFullName] = useState(user.full_name);
+  const [jobTitle, setJobTitle] = useState(user.job_title);
+  const [bio, setBio] = useState(user.bio);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+
+  const handleSave = async () => {
+    if (!fullName.trim()) { setError("Имя не может быть пустым"); return; }
+    setLoading(true);
+    setError("");
+    const token = localStorage.getItem("nexus_token") || "";
+    const res = await fetch(AUTH_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "X-Auth-Token": token },
+      body: JSON.stringify({ action: "update_profile", full_name: fullName.trim(), job_title: jobTitle.trim(), bio: bio.trim() }),
+    });
+    const text = await res.text();
+    let json: Record<string, unknown> = {};
+    try { json = JSON.parse(text); } catch { /* ignore */ }
+    if (typeof json === "string") { try { json = JSON.parse(json as string); } catch { /* ignore */ } }
+    setLoading(false);
+    if (!res.ok) { setError((json.error as string) || "Ошибка сохранения"); return; }
+    const updated = json as unknown as User;
+    localStorage.setItem("nexus_user", JSON.stringify(updated));
+    onSave(updated);
+    onClose();
+  };
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center p-4"
+      style={{ background: "rgba(10,15,30,0.7)", backdropFilter: "blur(4px)" }}
+      onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
+    >
+      <div
+        className="w-full max-w-md rounded-xl p-6 section-enter"
+        style={{ background: "hsl(0,0%,100%)", border: "1px solid hsl(216,20%,88%)" }}
+      >
+        <div className="flex items-center justify-between mb-5">
+          <h2 className="font-semibold text-base">Редактировать профиль</h2>
+          <button
+            onClick={onClose}
+            className="w-8 h-8 rounded-md flex items-center justify-center hover:bg-muted transition-colors"
+            style={{ color: "hsl(220,15%,55%)" }}
+          >
+            <Icon name="X" size={16} />
+          </button>
+        </div>
+
+        <div className="space-y-4">
+          <div>
+            <label className="block text-xs font-medium mb-1.5" style={{ color: "hsl(220,15%,45%)" }}>Имя и фамилия *</label>
+            <input
+              className="w-full px-3.5 py-2.5 rounded-lg border text-sm outline-none focus:border-blue-400 transition-all"
+              style={{ borderColor: "hsl(216,20%,85%)", color: "hsl(220,30%,15%)" }}
+              value={fullName}
+              onChange={(e) => setFullName(e.target.value)}
+              placeholder="Иван Иванов"
+            />
+          </div>
+
+          <div>
+            <label className="block text-xs font-medium mb-1.5" style={{ color: "hsl(220,15%,45%)" }}>Должность</label>
+            <input
+              className="w-full px-3.5 py-2.5 rounded-lg border text-sm outline-none focus:border-blue-400 transition-all"
+              style={{ borderColor: "hsl(216,20%,85%)", color: "hsl(220,30%,15%)" }}
+              value={jobTitle}
+              onChange={(e) => setJobTitle(e.target.value)}
+              placeholder="Генеральный директор"
+            />
+          </div>
+
+          <div>
+            <label className="block text-xs font-medium mb-1.5" style={{ color: "hsl(220,15%,45%)" }}>О себе</label>
+            <textarea
+              className="w-full px-3.5 py-2.5 rounded-lg border text-sm outline-none focus:border-blue-400 transition-all resize-none"
+              style={{ borderColor: "hsl(216,20%,85%)", color: "hsl(220,30%,15%)" }}
+              rows={4}
+              value={bio}
+              onChange={(e) => setBio(e.target.value)}
+              placeholder="Расскажите о своём опыте и специализации..."
+            />
+          </div>
+
+          {error && (
+            <div className="px-3.5 py-2.5 rounded-lg text-sm" style={{ background: "hsl(0,80%,97%)", color: "hsl(0,72%,40%)", border: "1px solid hsl(0,72%,88%)" }}>
+              {error}
+            </div>
+          )}
+
+          <div className="flex gap-3 pt-1">
+            <button
+              onClick={onClose}
+              className="btn-outline flex-1 py-2.5"
+            >
+              Отмена
+            </button>
+            <button
+              onClick={handleSave}
+              disabled={loading}
+              className="btn-primary flex-1 py-2.5"
+              style={{ opacity: loading ? 0.7 : 1, cursor: loading ? "not-allowed" : "pointer" }}
+            >
+              {loading ? "Сохранение..." : "Сохранить"}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ProfilePage({ user, onUserUpdate }: { user?: User; onUserUpdate?: (u: User) => void }) {
+  const [editOpen, setEditOpen] = useState(false);
+  const displayName = user?.full_name || "Пользователь";
+  const displayTitle = user?.job_title || "Участник сети";
+  const displayBio = user?.bio || "";
   const displayInitials = getInitials(displayName);
   const stats = [
     { label: "Подписчиков", value: "1 284" },
@@ -609,6 +732,14 @@ function ProfilePage({ user }: { user?: User }) {
   ];
 
   return (
+    <>
+      {editOpen && user && (
+        <EditProfileModal
+          user={user}
+          onClose={() => setEditOpen(false)}
+          onSave={(u) => { onUserUpdate?.(u); }}
+        />
+      )}
     <div className="max-w-3xl mx-auto px-4 py-5">
       <div className="post-card mb-4">
         <div
@@ -624,23 +755,25 @@ function ProfilePage({ user }: { user?: User }) {
           </div>
           <div className="pb-1 flex-1">
             <h1 className="font-bold text-lg">{displayName}</h1>
-            <p className="text-sm" style={{ color: "hsl(220,15%,50%)" }}>{displayTitle} · Москва</p>
+            <p className="text-sm" style={{ color: "hsl(220,15%,50%)" }}>{displayTitle}</p>
           </div>
           <div className="pb-1 flex gap-2">
-            <button className="btn-primary text-xs px-4 py-2">Редактировать</button>
+            <button className="btn-primary text-xs px-4 py-2" onClick={() => setEditOpen(true)}>Редактировать</button>
             <button className="btn-outline text-xs px-3 py-2"><Icon name="Share2" size={13} /></button>
           </div>
         </div>
 
-        <p className="text-sm leading-relaxed mb-4" style={{ color: "hsl(220,25%,25%)" }}>
-          10+ лет в корпоративных финансах и стратегическом развитии. Специализируюсь на масштабировании B2B-бизнеса и построении партнёрских сетей.
-        </p>
-
-        <div className="flex flex-wrap gap-1.5 mb-4">
-          {["Стратегия", "B2B", "Корпоративные финансы", "Партнёрства"].map((tag) => (
-            <span key={tag} className="stat-badge">#{tag}</span>
-          ))}
-        </div>
+        {displayBio ? (
+          <p className="text-sm leading-relaxed mb-4" style={{ color: "hsl(220,25%,25%)" }}>{displayBio}</p>
+        ) : (
+          <p
+            className="text-sm leading-relaxed mb-4 italic cursor-pointer hover:underline"
+            style={{ color: "hsl(220,15%,65%)" }}
+            onClick={() => setEditOpen(true)}
+          >
+            Добавьте информацию о себе...
+          </p>
+        )}
 
         <div className="grid grid-cols-4 gap-3 pt-4 border-t" style={{ borderColor: "hsl(216,20%,90%)" }}>
           {stats.map((s) => (
@@ -690,6 +823,7 @@ function ProfilePage({ user }: { user?: User }) {
         ))}
       </div>
     </div>
+    </>
   );
 }
 
@@ -741,7 +875,7 @@ export default function Index() {
       case "notifications": return <NotificationsPage />;
       case "search": return <SearchPage />;
       case "messages": return <MessagesPage />;
-      case "profile": return <ProfilePage user={currentUser} />;
+      case "profile": return <ProfilePage user={currentUser} onUserUpdate={(u) => { setCurrentUser(u); }} />;
     }
   };
 

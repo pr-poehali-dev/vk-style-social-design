@@ -160,4 +160,38 @@ def handler(event: dict, context) -> dict:
         user_id, email, full_name, job_title, bio = row
         return ok({"id": user_id, "email": email, "full_name": full_name, "job_title": job_title or "", "bio": bio or ""})
 
+    # --- update_profile ---
+    if action == "update_profile":
+        if not token:
+            return err(401, "Не авторизован")
+
+        full_name = body.get("full_name", "").strip()
+        job_title = body.get("job_title", "").strip()
+        bio = body.get("bio", "").strip()
+
+        if not full_name:
+            return err(400, "Имя не может быть пустым")
+
+        conn = get_conn()
+        cur = conn.cursor()
+        cur.execute(
+            f"""
+            UPDATE {SCHEMA}.users u
+            SET full_name = %s, job_title = %s, bio = %s
+            FROM {SCHEMA}.sessions s
+            WHERE s.token = %s AND s.expires_at > NOW() AND u.id = s.user_id
+            RETURNING u.id, u.email, u.full_name, u.job_title, u.bio
+            """,
+            (full_name, job_title, bio, token)
+        )
+        row = cur.fetchone()
+        conn.commit()
+        conn.close()
+
+        if not row:
+            return err(401, "Сессия истекла или недействительна")
+
+        user_id, email, fn, jt, b = row
+        return ok({"id": user_id, "email": email, "full_name": fn, "job_title": jt or "", "bio": b or ""})
+
     return err(400, "Неизвестное действие")
