@@ -7,29 +7,45 @@ const SOCIAL_URL = "https://functions.poehali.dev/1373884d-4344-47b3-a502-a1dfcf
 
 function getToken() { return localStorage.getItem("nexus_token") || ""; }
 
+const TIMEOUT_MS = 12000;
+
+function fetchWithTimeout(input: RequestInfo, init?: RequestInit): Promise<Response> {
+  const controller = new AbortController();
+  const id = setTimeout(() => controller.abort(), TIMEOUT_MS);
+  return fetch(input, { ...init, signal: controller.signal }).finally(() => clearTimeout(id));
+}
+
 async function apiPost(url: string, body: Record<string, unknown>) {
-  const res = await fetch(url, {
-    method: "POST",
-    headers: { "Content-Type": "application/json", "X-Auth-Token": getToken() },
-    body: JSON.stringify(body),
-  });
-  const text = await res.text();
-  let json: Record<string, unknown> = {};
-  try { json = JSON.parse(text); } catch { /* ignore */ }
-  if (typeof json === "string") { try { json = JSON.parse(json as string); } catch { /* ignore */ } }
-  return { ok: res.ok, data: json };
+  try {
+    const res = await fetchWithTimeout(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "X-Auth-Token": getToken() },
+      body: JSON.stringify(body),
+    });
+    const text = await res.text();
+    let json: Record<string, unknown> = {};
+    try { json = JSON.parse(text); } catch { /* ignore */ }
+    if (typeof json === "string") { try { json = JSON.parse(json as string); } catch { /* ignore */ } }
+    return { ok: res.ok, data: json };
+  } catch {
+    return { ok: false, data: { error: "Нет соединения с сервером" } };
+  }
 }
 
 async function apiGet(url: string, params: Record<string, string> = {}) {
-  const qs = new URLSearchParams(params).toString();
-  const res = await fetch(qs ? `${url}?${qs}` : url, {
-    headers: { "X-Auth-Token": getToken() },
-  });
-  const text = await res.text();
-  let json: Record<string, unknown> = {};
-  try { json = JSON.parse(text); } catch { /* ignore */ }
-  if (typeof json === "string") { try { json = JSON.parse(json as string); } catch { /* ignore */ } }
-  return { ok: res.ok, data: json };
+  try {
+    const qs = new URLSearchParams(params).toString();
+    const res = await fetchWithTimeout(qs ? `${url}?${qs}` : url, {
+      headers: { "X-Auth-Token": getToken() },
+    });
+    const text = await res.text();
+    let json: Record<string, unknown> = {};
+    try { json = JSON.parse(text); } catch { /* ignore */ }
+    if (typeof json === "string") { try { json = JSON.parse(json as string); } catch { /* ignore */ } }
+    return { ok: res.ok, data: json };
+  } catch {
+    return { ok: false, data: { error: "Нет соединения с сервером" } };
+  }
 }
 
 interface Comment {
@@ -145,18 +161,22 @@ function readFileAsBase64(file: File): Promise<string> {
 }
 
 async function apiAuth(action: string, data: Record<string, string>) {
-  const res = await fetch(AUTH_URL, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ action, ...data }),
-  });
-  const text = await res.text();
-  let json: Record<string, unknown>;
-  try { json = JSON.parse(text); } catch { json = {}; }
-  if (typeof json === "string") {
-    try { json = JSON.parse(json as string); } catch { json = {}; }
+  try {
+    const res = await fetchWithTimeout(AUTH_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action, ...data }),
+    });
+    const text = await res.text();
+    let json: Record<string, unknown>;
+    try { json = JSON.parse(text); } catch { json = {}; }
+    if (typeof json === "string") {
+      try { json = JSON.parse(json as string); } catch { json = {}; }
+    }
+    return { ok: res.ok, status: res.status, data: json };
+  } catch {
+    return { ok: false, status: 0, data: { error: "Нет соединения с сервером" } };
   }
-  return { ok: res.ok, status: res.status, data: json };
 }
 
 function AuthScreen({ onAuth }: { onAuth: (user: User, token: string) => void }) {
@@ -1234,17 +1254,32 @@ function PostCard({ post, onLike, onCommentAdded, onDelete, userInitials, userAv
   );
 }
 
-function FeedPage({ currentUser, onOpenProfile }: { currentUser: User | null; onOpenProfile?: (uid: number) => void }) {
-  const [feedPosts, setFeedPosts] = useState<Post[]>([]);
-  const [loading, setLoading] = useState(true);
+function FeedPage({ currentUser, onOpenProfile, cache, setCache, loaded, onLoaded }: {
+  currentUser: User | null; onOpenProfile?: (uid: number) => void;
+  cache: Post[]; setCache: (p: Post[]) => void; loaded: boolean; onLoaded: () => void;
+}) {
+  const [feedPosts, setFeedPostsLocal] = useState<Post[]>(cache);
+  const [loading, setLoading] = useState(!loaded);
   const [showCreate, setShowCreate] = useState(false);
   const userInitials = currentUser ? getInitials(currentUser.full_name) : "?";
 
-  useEffect(() => {
-    apiGet(POSTS_URL).then((r) => {
-      setFeedPosts((r.data.posts as Post[]) || []);
-      setLoading(false);
+  const setFeedPosts = (fn: Post[] | ((prev: Post[]) => Post[])) => {
+    setFeedPostsLocal((prev) => {
+      const next = typeof fn === "function" ? fn(prev) : fn;
+      setCache(next);
+      return next;
     });
+  };
+
+  useEffect(() => {
+    if (loaded) return;
+    apiGet(POSTS_URL).then((r) => {
+      const posts = (r.data.posts as Post[]) || [];
+      setFeedPostsLocal(posts);
+      setCache(posts);
+      setLoading(false);
+      onLoaded();
+    }).catch(() => setLoading(false));
   }, []);
 
   const handleLike = async (postId: number) => {
@@ -1316,15 +1351,30 @@ function FeedPage({ currentUser, onOpenProfile }: { currentUser: User | null; on
   );
 }
 
-function FriendsPage({ onOpenProfile }: { onOpenProfile?: (uid: number) => void }) {
-  const [users, setUsers] = useState<SocialUser[]>([]);
-  const [loading, setLoading] = useState(true);
+function FriendsPage({ onOpenProfile, cache, setCache, loaded, onLoaded }: {
+  onOpenProfile?: (uid: number) => void;
+  cache: SocialUser[]; setCache: (u: SocialUser[]) => void; loaded: boolean; onLoaded: () => void;
+}) {
+  const [users, setUsersLocal] = useState<SocialUser[]>(cache);
+  const [loading, setLoading] = useState(!loaded);
+
+  const setUsers = (fn: SocialUser[] | ((prev: SocialUser[]) => SocialUser[])) => {
+    setUsersLocal((prev) => {
+      const next = typeof fn === "function" ? fn(prev) : fn;
+      setCache(next);
+      return next;
+    });
+  };
 
   useEffect(() => {
+    if (loaded) return;
     apiPost(SOCIAL_URL, { action: "search_users", q: "" }).then((r) => {
-      setUsers((r.data.users as SocialUser[]) || []);
+      const u = (r.data.users as SocialUser[]) || [];
+      setUsersLocal(u);
+      setCache(u);
       setLoading(false);
-    });
+      onLoaded();
+    }).catch(() => setLoading(false));
   }, []);
 
   const toggleFollow = async (u: SocialUser) => {
@@ -1395,15 +1445,22 @@ function FriendsPage({ onOpenProfile }: { onOpenProfile?: (uid: number) => void 
   );
 }
 
-function NotificationsPage({ onOpenProfile }: { onOpenProfile?: (uid: number) => void }) {
-  const [notifs, setNotifs] = useState<Notification[]>([]);
-  const [loading, setLoading] = useState(true);
+function NotificationsPage({ onOpenProfile, cache, setCache, loaded, onLoaded }: {
+  onOpenProfile?: (uid: number) => void;
+  cache: Notification[]; setCache: (n: Notification[]) => void; loaded: boolean; onLoaded: () => void;
+}) {
+  const [notifs, setNotifs] = useState<Notification[]>(cache);
+  const [loading, setLoading] = useState(!loaded);
 
   useEffect(() => {
+    if (loaded) return;
     apiPost(SOCIAL_URL, { action: "get_notifications" }).then((r) => {
-      setNotifs((r.data.notifications as Notification[]) || []);
+      const n = (r.data.notifications as Notification[]) || [];
+      setNotifs(n);
+      setCache(n);
       setLoading(false);
-    });
+      onLoaded();
+    }).catch(() => setLoading(false));
   }, []);
 
   if (loading) return (
@@ -2337,24 +2394,21 @@ export default function Index() {
   const [linkedAccounts, setLinkedAccounts] = useState<{ token: string; user: User }[]>(() => {
     try { return JSON.parse(localStorage.getItem("nexus_linked_accounts") || "[]"); } catch { return []; }
   });
+  // === КЭШ ДАННЫХ — чтобы не перезагружать при переключении вкладок ===
+  const [cachedFeed, setCachedFeed] = useState<Post[]>([]);
+  const [cachedFriends, setCachedFriends] = useState<SocialUser[]>([]);
+  const [cachedNotifs, setCachedNotifs] = useState<Notification[]>([]);
+  const [loadedTabs, setLoadedTabs] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     const token = localStorage.getItem("nexus_token");
     const saved = localStorage.getItem("nexus_user");
     if (token && saved) {
       try {
-        const u = JSON.parse(saved);
+        const u = JSON.parse(saved) as User;
         setCurrentUser(u);
-        // Проверяем is_admin через get_profile
-        fetch(SOCIAL_URL, { method: "POST", headers: { "Content-Type": "application/json", "X-Auth-Token": token }, body: JSON.stringify({ action: "get_profile" }) })
-          .then((r) => r.text()).then((t) => {
-            let j: Record<string, unknown> = {};
-            try { j = JSON.parse(t); } catch { /* ignore */ }
-            if (typeof j === "string") { try { j = JSON.parse(j as string); } catch { /* ignore */ } }
-          });
-        // Проверим через posts admin_data — если успешно, то admin
-        fetch(POSTS_URL, { method: "POST", headers: { "Content-Type": "application/json", "X-Auth-Token": token }, body: JSON.stringify({ action: "admin_data" }) })
-          .then((r) => { if (r.ok) setIsAdmin(true); });
+        // is_admin определяем только по полю из сохранённого профиля
+        if ((u as User & { is_admin?: boolean }).is_admin) setIsAdmin(true);
       } catch { /* ignore */ }
     }
     setAuthChecked(true);
@@ -2362,6 +2416,17 @@ export default function Index() {
 
   useEffect(() => {
     if (!currentUser) return;
+    // Запрос is_admin только один раз при входе (через auth/me не грузим admin_data)
+    const token = localStorage.getItem("nexus_token");
+    if (token) {
+      fetch(AUTH_URL, { method: "POST", headers: { "Content-Type": "application/json", "X-Auth-Token": token }, body: JSON.stringify({ action: "me" }) })
+        .then((r) => r.json()).then((j) => {
+          try {
+            const data = typeof j === "string" ? JSON.parse(j) : j;
+            if (data?.is_admin) setIsAdmin(true);
+          } catch { /* ignore */ }
+        }).catch(() => {});
+    }
     requestPushPermission();
     let prevCount = 0;
     const fetchCount = () => {
@@ -2372,35 +2437,17 @@ export default function Index() {
         }
         prevCount = count;
         setUnreadCount(count);
-      });
+      }).catch(() => {});
     };
     fetchCount();
-    const interval = setInterval(fetchCount, 30000);
+    const interval = setInterval(fetchCount, 60000);
     return () => clearInterval(interval);
-  }, [currentUser]);
+  }, [currentUser?.id]);
 
-  const handleAuth = (user: User, token: string) => {
-    // Сохраняем текущий аккаунт в связанные (если есть другой активный)
-    const prevToken = localStorage.getItem("nexus_token");
-    const prevUser = localStorage.getItem("nexus_user");
-    if (prevToken && prevUser && prevToken !== token) {
-      try {
-        const pu = JSON.parse(prevUser) as User;
-        setLinkedAccounts((prev) => {
-          const exists = prev.some((a) => a.token === prevToken);
-          const updated = exists ? prev : [...prev, { token: prevToken, user: pu }];
-          localStorage.setItem("nexus_linked_accounts", JSON.stringify(updated));
-          return updated;
-        });
-      } catch { /* ignore */ }
-    }
+  const handleAuth = (user: User, _token: string) => {
     setCurrentUser(user);
-    setIsAdmin(false);
+    setIsAdmin(!!(user as User & { is_admin?: boolean }).is_admin);
     requestPushPermission();
-    setTimeout(() => {
-      fetch(POSTS_URL, { method: "POST", headers: { "Content-Type": "application/json", "X-Auth-Token": localStorage.getItem("nexus_token") || "" }, body: JSON.stringify({ action: "admin_data" }) })
-        .then((r) => { if (r.ok) setIsAdmin(true); });
-    }, 500);
   };
 
   const handleLogout = async () => {
@@ -2442,14 +2489,21 @@ export default function Index() {
     localStorage.setItem("nexus_token", token);
     localStorage.setItem("nexus_user", JSON.stringify(user));
     setCurrentUser(user);
-    setIsAdmin(false);
+    setIsAdmin(!!(user as User & { is_admin?: boolean }).is_admin);
     setActive("feed");
     setViewingUserId(null);
-    fetch(POSTS_URL, { method: "POST", headers: { "Content-Type": "application/json", "X-Auth-Token": token }, body: JSON.stringify({ action: "admin_data" }) })
-      .then((r) => { if (r.ok) setIsAdmin(true); });
   };
 
-  if (!authChecked) return null;
+  if (!authChecked) return (
+    <div className="min-h-screen flex items-center justify-center" style={{ background: "hsl(221,35%,12%)" }}>
+      <div className="text-center">
+        <div className="inline-flex items-center justify-center w-12 h-12 rounded-lg mb-4" style={{ background: "hsl(213,80%,42%)" }}>
+          <span className="text-white font-bold text-lg">N</span>
+        </div>
+        <div className="text-sm" style={{ color: "hsl(214,25%,50%)" }}>Загрузка...</div>
+      </div>
+    </div>
+  );
   if (!currentUser) return <AuthScreen onAuth={handleAuth} />;
 
   const userInitials = getInitials(currentUser.full_name);
@@ -2474,12 +2528,20 @@ export default function Index() {
     );
   }
 
+  const markLoaded = (tab: string) => setLoadedTabs((prev) => new Set([...prev, tab]));
+
   const renderPage = () => {
     switch (active) {
-      case "feed": return <FeedPage currentUser={currentUser} onOpenProfile={openUserProfile} />;
-      case "friends": return <FriendsPage onOpenProfile={openUserProfile} />;
+      case "feed": return <FeedPage currentUser={currentUser} onOpenProfile={openUserProfile}
+        cache={cachedFeed} setCache={setCachedFeed}
+        loaded={loadedTabs.has("feed")} onLoaded={() => markLoaded("feed")} />;
+      case "friends": return <FriendsPage onOpenProfile={openUserProfile}
+        cache={cachedFriends} setCache={setCachedFriends}
+        loaded={loadedTabs.has("friends")} onLoaded={() => markLoaded("friends")} />;
       case "groups": return <GroupsPage currentUser={currentUser} />;
-      case "notifications": return <NotificationsPage onOpenProfile={openUserProfile} />;
+      case "notifications": return <NotificationsPage onOpenProfile={openUserProfile}
+        cache={cachedNotifs} setCache={setCachedNotifs}
+        loaded={loadedTabs.has("notifications")} onLoaded={() => markLoaded("notifications")} />;
       case "search": return <SearchPage onStartChat={async (uid) => {
         const r = await apiPost(SOCIAL_URL, { action: "chat_start", partner_id: uid });
         if (r.ok) setActive("messages");

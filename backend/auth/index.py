@@ -88,9 +88,10 @@ def handler(event: dict, context) -> dict:
         conn.commit()
         conn.close()
 
+        # is_admin по умолчанию false для новых пользователей
         return ok({
             "token": session_token,
-            "user": {"id": user_id, "email": email, "full_name": full_name, "job_title": job_title, "bio": ""}
+            "user": {"id": user_id, "email": email, "full_name": full_name, "job_title": job_title, "bio": "", "is_admin": False, "avatar_url": ""}
         })
 
     # --- login ---
@@ -104,7 +105,7 @@ def handler(event: dict, context) -> dict:
         cur = conn.cursor()
         pw_hash = hash_password(password)
         cur.execute(
-            f"SELECT id, full_name, job_title, bio FROM {SCHEMA}.users WHERE email = %s AND password_hash = %s",
+            f"SELECT id, full_name, job_title, bio, is_admin, avatar_url FROM {SCHEMA}.users WHERE email = %s AND password_hash = %s",
             (email, pw_hash)
         )
         row = cur.fetchone()
@@ -112,7 +113,7 @@ def handler(event: dict, context) -> dict:
             conn.close()
             return err(401, "Неверный email или пароль")
 
-        user_id, full_name, job_title, bio = row
+        user_id, full_name, job_title, bio, is_admin, avatar_url = row
         session_token = secrets.token_hex(32)
         cur.execute(
             f"INSERT INTO {SCHEMA}.sessions (token, user_id) VALUES (%s, %s)",
@@ -123,7 +124,8 @@ def handler(event: dict, context) -> dict:
 
         return ok({
             "token": session_token,
-            "user": {"id": user_id, "email": email, "full_name": full_name, "job_title": job_title or "", "bio": bio or ""}
+            "user": {"id": user_id, "email": email, "full_name": full_name, "job_title": job_title or "",
+                     "bio": bio or "", "is_admin": bool(is_admin), "avatar_url": avatar_url or ""}
         })
 
     # --- logout ---
@@ -145,7 +147,7 @@ def handler(event: dict, context) -> dict:
         cur = conn.cursor()
         cur.execute(
             f"""
-            SELECT u.id, u.email, u.full_name, u.job_title, u.bio
+            SELECT u.id, u.email, u.full_name, u.job_title, u.bio, u.is_admin, u.avatar_url
             FROM {SCHEMA}.sessions s
             JOIN {SCHEMA}.users u ON u.id = s.user_id
             WHERE s.token = %s AND s.expires_at > NOW()
@@ -157,8 +159,9 @@ def handler(event: dict, context) -> dict:
         if not row:
             return err(401, "Сессия истекла или недействительна")
 
-        user_id, email, full_name, job_title, bio = row
-        return ok({"id": user_id, "email": email, "full_name": full_name, "job_title": job_title or "", "bio": bio or ""})
+        user_id, email, full_name, job_title, bio, is_admin, avatar_url = row
+        return ok({"id": user_id, "email": email, "full_name": full_name, "job_title": job_title or "",
+                   "bio": bio or "", "is_admin": bool(is_admin), "avatar_url": avatar_url or ""})
 
     # --- update_profile ---
     if action == "update_profile":
