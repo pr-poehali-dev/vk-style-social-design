@@ -742,6 +742,10 @@ def handler(event: dict, context) -> dict:
         conn = get_conn(); cur = conn.cursor()
         user = get_user_by_token(cur, token) if token else None
         uid = user[0] if user else None
+        is_group_owner = False
+        if uid:
+            cur.execute(f"SELECT 1 FROM {SCHEMA}.group_members WHERE group_id=%s AND user_id=%s AND role='owner'", (gid, uid))
+            is_group_owner = bool(cur.fetchone())
         cur.execute(f"""SELECT gp.id, gp.text, gp.media_url, gp.media_type, gp.likes_count,
             COALESCE(gp.comments_count,0), gp.created_at,
             u.id, u.full_name, u.job_title, u.avatar_url,
@@ -754,7 +758,7 @@ def handler(event: dict, context) -> dict:
         rows = cur.fetchall(); conn.close()
         return ok({"posts": [{"id": r[0], "text": r[1] or "", "media_url": r[2] or "", "media_type": r[3] or "",
             "likes_count": r[4], "comments_count": r[5], "created_at": str(r[6]),
-            "liked": bool(r[11]), "is_mine": uid == r[12],
+            "liked": bool(r[11]), "is_mine": uid == r[12] or is_group_owner,
             "author": {"id": r[7], "full_name": r[8], "job_title": r[9] or "",
                 "avatar_url": r[10] or "", "initials": "".join(w[0] for w in r[8].split() if w)[:2].upper()}} for r in rows]})
 
