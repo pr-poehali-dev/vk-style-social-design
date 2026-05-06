@@ -364,6 +364,35 @@ def handler(event: dict, context) -> dict:
             "created_at": str(cat), "is_me": True, "sender_id": uid,
             "sender_name": uname, "sender_initials": initials(uname), "conv_id": conv_id}})
 
+    # --- typing indicator: set ---
+    if action == "typing_set":
+        if not token: return err(401, "Не авторизован")
+        conv_id = body.get("conv_id")
+        if not conv_id: return err(400, "conv_id обязателен")
+        conn = get_conn(); cur = conn.cursor()
+        user = get_user_by_token(cur, token)
+        if not user: conn.close(); return err(401, "Сессия истекла")
+        uid, _, _ = user
+        cur.execute(f"""INSERT INTO {SCHEMA}.typing_indicators (user_id, conv_id, updated_at)
+            VALUES (%s,%s,NOW()) ON CONFLICT (user_id, conv_id) DO UPDATE SET updated_at=NOW()""", (uid, int(conv_id)))
+        conn.commit(); conn.close()
+        return ok({})
+
+    # --- typing indicator: get ---
+    if action == "typing_get":
+        if not token: return err(401, "Не авторизован")
+        conv_id = body.get("conv_id")
+        if not conv_id: return err(400, "conv_id обязателен")
+        conn = get_conn(); cur = conn.cursor()
+        user = get_user_by_token(cur, token)
+        if not user: conn.close(); return err(401, "Сессия истекла")
+        uid, _, _ = user
+        cur.execute(f"""SELECT user_id FROM {SCHEMA}.typing_indicators
+            WHERE conv_id=%s AND user_id != %s AND updated_at > NOW() - INTERVAL '5 seconds'""", (int(conv_id), uid))
+        row = cur.fetchone()
+        conn.close()
+        return ok({"typing": row is not None})
+
     # --- delete conversation ---
     if action == "chat_delete":
         if not token: return err(401, "Не авторизован")

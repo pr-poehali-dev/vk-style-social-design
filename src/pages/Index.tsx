@@ -1967,6 +1967,8 @@ function MessagesPage({ currentUser }: { currentUser: User | null }) {
   const docRef = useRef<HTMLInputElement | null>(null);
   const activeConvRef = useRef<Conversation | null>(null);
   const messagesRef = useRef<ChatMessage[]>([]);
+  const [partnerTyping, setPartnerTyping] = useState(false);
+  const typingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => { activeConvRef.current = activeConv; }, [activeConv]);
   useEffect(() => { messagesRef.current = messages; }, [messages]);
@@ -2005,6 +2007,25 @@ function MessagesPage({ currentUser }: { currentUser: User | null }) {
   useEffect(() => {
     if (messagesEndRef.current) messagesEndRef.current.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
+
+  // Polling индикатора "пишет..." каждые 3 секунды
+  useEffect(() => {
+    const interval = setInterval(async () => {
+      const conv = activeConvRef.current;
+      if (!conv) return;
+      const r = await apiPost(SOCIAL_URL, { action: "typing_get", conv_id: conv.id });
+      setPartnerTyping(r.data?.typing === true);
+    }, 3000);
+    return () => clearInterval(interval);
+  }, []);
+
+  const handleTyping = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setNewMsg(e.target.value);
+    const conv = activeConvRef.current;
+    if (!conv) return;
+    apiPost(SOCIAL_URL, { action: "typing_set", conv_id: conv.id });
+    if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
+  };
 
   // Push уведомления
   useEffect(() => {
@@ -2157,7 +2178,17 @@ function MessagesPage({ currentUser }: { currentUser: User | null }) {
               <div ref={messagesEndRef} />
             </div>
 
-            <div className="px-3 py-2.5 border-t bg-card flex items-center gap-2 flex-shrink-0" style={{ borderColor: "hsl(216,20%,88%)" }}>
+            {partnerTyping && (
+            <div className="px-5 pb-1 flex items-center gap-1.5" style={{ color: "hsl(220,15%,55%)" }}>
+              <span className="text-xs italic">{activeConv.partner.full_name} печатает</span>
+              <span className="flex gap-0.5 items-end pb-0.5">
+                <span className="w-1 h-1 rounded-full bg-current animate-bounce" style={{ animationDelay: "0ms" }} />
+                <span className="w-1 h-1 rounded-full bg-current animate-bounce" style={{ animationDelay: "150ms" }} />
+                <span className="w-1 h-1 rounded-full bg-current animate-bounce" style={{ animationDelay: "300ms" }} />
+              </span>
+            </div>
+          )}
+          <div className="px-3 py-2.5 border-t bg-card flex items-center gap-2 flex-shrink-0" style={{ borderColor: "hsl(216,20%,88%)" }}>
               <div className="flex gap-1">
                 <button className="p-2 rounded-lg hover:bg-muted" onClick={() => fileRef.current?.click()} disabled={sendingMedia} title="Фото/Видео" style={{ color: "hsl(220,15%,50%)" }}>
                   {sendingMedia ? <Icon name="Loader" size={16} className="animate-spin" /> : <Icon name="Image" size={16} />}
@@ -2171,7 +2202,7 @@ function MessagesPage({ currentUser }: { currentUser: User | null }) {
                 style={{ borderColor: "hsl(216,20%,85%)", color: "hsl(220,30%,15%)" }}
                 placeholder="Написать сообщение..."
                 value={newMsg}
-                onChange={(e) => setNewMsg(e.target.value)}
+                onChange={handleTyping}
                 onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendMessage(); } }}
               />
               <button className="btn-primary px-3 py-2 rounded-full flex-shrink-0" onClick={() => sendMessage()} disabled={!newMsg.trim()}>
