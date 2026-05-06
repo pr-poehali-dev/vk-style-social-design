@@ -25,8 +25,9 @@ def get_user_by_token(cur, token):
     return cur.fetchone()
 
 def fmt_post(r, viewer_id=None):
-    pid, text, tags, likes, comments, views, shares, created_at, uid, full_name, job_title, avatar_url, liked, media_url, media_type = r
+    pid, text, tags, likes, comments, views, shares, created_at, uid, full_name, job_title, avatar_url, liked, media_url, media_type, media_urls = r
     initials = "".join(w[0] for w in full_name.split() if w)[:2].upper()
+    urls = media_urls if isinstance(media_urls, list) else []
     return {
         "id": pid, "text": text or "",
         "tags": [t.strip() for t in tags.split(",") if t.strip()] if tags else [],
@@ -37,6 +38,7 @@ def fmt_post(r, viewer_id=None):
                    "initials": initials, "avatar_url": avatar_url or ""},
         "liked": bool(liked), "is_mine": uid == viewer_id,
         "media_url": media_url or "", "media_type": media_type or "",
+        "media_urls": urls,
     }
 
 def handler(event: dict, context) -> dict:
@@ -59,7 +61,8 @@ def handler(event: dict, context) -> dict:
                COALESCE(p.share_count,0), p.created_at,
                u.id, u.full_name, u.job_title, u.avatar_url,
                CASE WHEN pl.user_id IS NOT NULL THEN true ELSE false END as liked,
-               COALESCE(p.media_url,''), COALESCE(p.media_type,'')
+               COALESCE(p.media_url,''), COALESCE(p.media_type,''),
+               COALESCE(p.media_urls,'[]'::jsonb)
         FROM {SCHEMA}.posts p
         JOIN {SCHEMA}.users u ON u.id = p.user_id
         LEFT JOIN {SCHEMA}.post_likes pl ON pl.post_id = p.id AND pl.user_id = %s
@@ -111,14 +114,17 @@ def handler(event: dict, context) -> dict:
         tags = body.get("tags", "").strip()
         media_url = body.get("media_url", "")
         media_type = body.get("media_type", "")
-        if not text and not media_url: return err(400, "Добавьте текст или медиа")
+        media_urls = body.get("media_urls", [])
+        if not isinstance(media_urls, list): media_urls = []
+        if not text and not media_url and not media_urls: return err(400, "Добавьте текст или медиа")
         if len(text) > 3000: return err(400, "Текст слишком длинный (макс 3000)")
         conn = get_conn(); cur = conn.cursor()
         user = get_user_by_token(cur, token)
         if not user: conn.close(); return err(401, "Сессия истекла")
         user_id, full_name, job_title = user[0], user[1], user[2]
-        cur.execute(f"""INSERT INTO {SCHEMA}.posts (user_id, text, tags, media_url, media_type)
-            VALUES (%s,%s,%s,%s,%s) RETURNING id, created_at""", (user_id, text, tags, media_url, media_type))
+        cur.execute(f"""INSERT INTO {SCHEMA}.posts (user_id, text, tags, media_url, media_type, media_urls)
+            VALUES (%s,%s,%s,%s,%s,%s) RETURNING id, created_at""",
+            (user_id, text, tags, media_url, media_type, json.dumps(media_urls)))
         post_id, created_at = cur.fetchone()
         conn.commit(); conn.close()
         initials = "".join(w[0] for w in full_name.split() if w)[:2].upper()
@@ -127,7 +133,7 @@ def handler(event: dict, context) -> dict:
             "likes_count": 0, "comments_count": 0, "views_count": 0, "share_count": 0,
             "created_at": str(created_at),
             "author": {"id": user_id, "full_name": full_name, "job_title": job_title or "", "initials": initials, "avatar_url": user[4] if len(user) > 4 else ""},
-            "liked": False, "is_mine": True, "media_url": media_url, "media_type": media_type,
+            "liked": False, "is_mine": True, "media_url": media_url, "media_type": media_type, "media_urls": media_urls,
         }})
 
     # --- delete post ---

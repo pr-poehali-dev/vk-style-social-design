@@ -1,0 +1,1 @@
+ALTER TABLE t_p89645412_vk_style_social_desi.posts ADD COLUMN IF NOT EXISTS media_urls jsonb NULL DEFAULT '[]'::jsonb;

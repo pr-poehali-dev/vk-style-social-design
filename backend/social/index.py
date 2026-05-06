@@ -1,7 +1,7 @@
 """
 Социальные функции: подписки, уведомления, поиск людей, чат, медиа, аватар. v3
 """
-import json, os, base64, uuid, mimetypes
+import json, os, base64, uuid, mimetypes, io
 import psycopg2
 import boto3
 
@@ -481,13 +481,29 @@ def handler(event: dict, context) -> dict:
         if "," in file_data: file_data = file_data.split(",", 1)[1]
         try: data_bytes = base64.b64decode(file_data)
         except Exception: return err(400, "Ошибка декодирования")
-        if file_type.startswith("video/") and len(data_bytes) > 15 * 1024 * 1024: return err(400, "Видео не более 15 МБ. Сожмите файл или обрежьте длину.")
+        if file_type.startswith("video/") and len(data_bytes) > 200 * 1024 * 1024: return err(400, "Видео не более 200 МБ.")
         if not file_type.startswith("video/") and len(data_bytes) > 100 * 1024 * 1024: return err(400, "Файл слишком большой (макс 100 МБ)")
         ext = mimetypes.guess_extension(file_type) or ".bin"
         if ext == ".jpe": ext = ".jpg"
         if ext == ".mpga": ext = ".mp3"
         if not ext or ext == ".None": ext = ".bin"
-        key = f"nexus/media/{uuid.uuid4().hex}{ext}"
+        # Сжатие изображений для ускорения
+        if file_type.startswith("image/") and file_type != "image/gif":
+            try:
+                from PIL import Image
+                img = Image.open(io.BytesIO(data_bytes))
+                if img.mode not in ("RGB", "RGBA"): img = img.convert("RGB")
+                max_size = 1920
+                if img.width > max_size or img.height > max_size:
+                    img.thumbnail((max_size, max_size), Image.LANCZOS)
+                buf = io.BytesIO()
+                save_fmt = "JPEG" if file_type != "image/png" else "PNG"
+                img.save(buf, format=save_fmt, quality=82, optimize=True)
+                data_bytes = buf.getvalue()
+                file_type = "image/jpeg" if save_fmt == "JPEG" else "image/png"
+                ext = ".jpg" if save_fmt == "JPEG" else ".png"
+            except Exception: pass
+        key = f"clanse/media/{uuid.uuid4().hex}{ext}"
         s3 = get_s3()
         s3.put_object(Bucket=BUCKET, Key=key, Body=data_bytes, ContentType=file_type)
         if file_type.startswith("video/"):
@@ -497,6 +513,39 @@ def handler(event: dict, context) -> dict:
         else:
             media_kind = "document"
         return ok({"url": f"{cdn_base}/{key}", "media_type": media_kind})
+
+    # --- upload multiple media (до 10 фото) ---
+    if action == "upload_media_multi":
+        if not token: return err(401, "Не авторизован")
+        files = body.get("files", [])
+        if not files or not isinstance(files, list): return err(400, "files не переданы")
+        if len(files) > 10: return err(400, "Максимум 10 файлов")
+        s3 = get_s3()
+        results = []
+        for f in files:
+            fd = f.get("file_data", "")
+            ft = f.get("file_type", "image/jpeg")
+            if "," in fd: fd = fd.split(",", 1)[1]
+            try: data_bytes = base64.b64decode(fd)
+            except Exception: return err(400, "Ошибка декодирования одного из файлов")
+            if not ft.startswith("image/"): return err(400, "upload_media_multi только для изображений")
+            if len(data_bytes) > 100 * 1024 * 1024: return err(400, "Файл слишком большой")
+            ext = ".jpg"
+            try:
+                from PIL import Image
+                img = Image.open(io.BytesIO(data_bytes))
+                if img.mode not in ("RGB", "RGBA"): img = img.convert("RGB")
+                if img.width > 1920 or img.height > 1920:
+                    img.thumbnail((1920, 1920), Image.LANCZOS)
+                buf = io.BytesIO()
+                img.save(buf, format="JPEG", quality=82, optimize=True)
+                data_bytes = buf.getvalue()
+                ft = "image/jpeg"
+            except Exception: pass
+            key = f"clanse/media/{uuid.uuid4().hex}{ext}"
+            s3.put_object(Bucket=BUCKET, Key=key, Body=data_bytes, ContentType=ft)
+            results.append({"url": f"{cdn_base}/{key}", "media_type": "image"})
+        return ok({"files": results})
 
     # --- upload cover ---
     if action == "upload_cover":

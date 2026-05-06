@@ -123,6 +123,7 @@ interface Post {
   is_mine: boolean;
   media_url?: string;
   media_type?: string;
+  media_urls?: string[];
 }
 
 interface UserStats {
@@ -346,7 +347,7 @@ function AuthScreen({ onAuth }: { onAuth: (user: User, token: string) => void })
           </form>
         </div>
 
-        <p className="text-center text-xs mt-4" style={{ color: "hsl(214,25%,40%)" }}>Nexus © 2026 · Деловая профессиональная сеть</p>
+        <p className="text-center text-xs mt-4" style={{ color: "hsl(214,25%,40%)" }}>CLANSE © 2026 · Деловая профессиональная сеть</p>
       </div>
     </div>
   );
@@ -445,45 +446,83 @@ function CreatePostModal({ userInitials, onClose, onCreated }: { userInitials: s
   const [loading, setLoading] = useState(false);
   const [uploadPercent, setUploadPercent] = useState(0);
   const [error, setError] = useState("");
-  const [mediaPreview, setMediaPreview] = useState<string>("");
+  // Одиночный файл (видео / документ) или несколько фото
   const [mediaFile, setMediaFile] = useState<File | null>(null);
+  const [mediaPreview, setMediaPreview] = useState<string>("");
+  const [photoFiles, setPhotoFiles] = useState<File[]>([]);
+  const [photoPreviews, setPhotoPreviews] = useState<string[]>([]);
+  const [slideIdx, setSlideIdx] = useState(0);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const multiInputRef = useRef<HTMLInputElement | null>(null);
 
   const handleMediaSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    if (file.type.startsWith("video/") && file.size > 15 * 1024 * 1024) { setError("Видео не более 15 МБ. Сожмите файл или обрежьте длину."); return; }
+    if (file.type.startsWith("video/") && file.size > 200 * 1024 * 1024) { setError("Видео не более 200 МБ."); return; }
     if (!file.type.startsWith("video/") && file.size > 100 * 1024 * 1024) { setError("Файл не более 100 МБ"); return; }
+    setPhotoFiles([]); setPhotoPreviews([]);
     setMediaFile(file);
-    if (file.type.startsWith("image/")) {
-      const b64 = await readFileAsBase64(file);
-      setMediaPreview(b64);
-    } else {
-      setMediaPreview(URL.createObjectURL(file));
-    }
+    setMediaPreview(file.type.startsWith("image/") ? await readFileAsBase64(file) : URL.createObjectURL(file));
+  };
+
+  const handleMultiSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files || []).filter(f => f.type.startsWith("image/")).slice(0, 10);
+    if (!files.length) return;
+    setMediaFile(null); setMediaPreview("");
+    setPhotoFiles(files);
+    setSlideIdx(0);
+    const previews = await Promise.all(files.map(f => readFileAsBase64(f)));
+    setPhotoPreviews(previews);
+  };
+
+  const removePhoto = (i: number) => {
+    const nf = photoFiles.filter((_, idx) => idx !== i);
+    const np = photoPreviews.filter((_, idx) => idx !== i);
+    setPhotoFiles(nf); setPhotoPreviews(np);
+    setSlideIdx(Math.min(slideIdx, nf.length - 1));
   };
 
   const submit = async () => {
-    if (!text.trim() && !mediaFile) { setError("Введите текст или добавьте медиа"); return; }
+    const hasMedia = !!mediaFile || photoFiles.length > 0;
+    if (!text.trim() && !hasMedia) { setError("Введите текст или добавьте медиа"); return; }
     setLoading(true); setError(""); setUploadPercent(0);
-    let media_url = "", media_type = "";
-    if (mediaFile) {
+    let media_url = "", media_type = "", media_urls: string[] = [];
+
+    if (photoFiles.length > 1) {
+      // Параллельная загрузка нескольких фото
+      setUploadPercent(10);
+      const encoded = await Promise.all(photoFiles.map(f => readFileAsBase64(f)));
+      setUploadPercent(40);
+      const r = await apiPost(SOCIAL_URL, {
+        action: "upload_media_multi",
+        files: encoded.map((fd, i) => ({ file_data: fd, file_type: photoFiles[i].type }))
+      }, true);
+      setUploadPercent(85);
+      if (!r.ok) { setError((r.data.error as string) || "Ошибка загрузки фото"); setLoading(false); setUploadPercent(0); return; }
+      const uploaded = (r.data.files as { url: string }[]);
+      media_urls = uploaded.map(u => u.url);
+      media_url = media_urls[0];
+      media_type = "image";
+    } else if (mediaFile || photoFiles.length === 1) {
+      const f = mediaFile || photoFiles[0];
       setUploadPercent(15);
-      const b64 = await readFileAsBase64(mediaFile);
+      const b64 = await readFileAsBase64(f);
       setUploadPercent(55);
-      const r = await apiPost(SOCIAL_URL, { action: "upload_media", file_data: b64, file_type: mediaFile.type }, true);
+      const r = await apiPost(SOCIAL_URL, { action: "upload_media", file_data: b64, file_type: f.type }, true);
       setUploadPercent(85);
       if (!r.ok) { setError((r.data.error as string) || "Ошибка загрузки файла"); setLoading(false); setUploadPercent(0); return; }
       media_url = r.data.url as string;
       media_type = r.data.media_type as string;
     }
-    const r = await apiPost(POSTS_URL, { action: "create", text: text.trim(), tags: tags.trim(), media_url, media_type });
-    setUploadPercent(100);
-    setLoading(false);
+
+    const r = await apiPost(POSTS_URL, { action: "create", text: text.trim(), tags: tags.trim(), media_url, media_type, media_urls });
+    setUploadPercent(100); setLoading(false);
     if (!r.ok) { setError((r.data.error as string) || "Ошибка создания поста"); setUploadPercent(0); return; }
     onCreated(r.data.post as Post);
     onClose();
   };
+
+  const hasContent = !!(text.trim() || mediaFile || photoFiles.length);
 
   return (
     <div
@@ -491,7 +530,8 @@ function CreatePostModal({ userInitials, onClose, onCreated }: { userInitials: s
       style={{ background: "rgba(10,15,30,0.7)", backdropFilter: "blur(4px)" }}
       onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
     >
-      <input ref={fileInputRef} type="file" accept="image/*,video/*" className="hidden" onChange={handleMediaSelect} />
+      <input ref={fileInputRef} type="file" accept="video/*,application/pdf,.doc,.docx" className="hidden" onChange={handleMediaSelect} />
+      <input ref={multiInputRef} type="file" accept="image/*" multiple className="hidden" onChange={handleMultiSelect} />
       <div className="w-full max-w-lg rounded-xl p-6 section-enter" style={{ background: "hsl(0,0%,100%)", border: "1px solid hsl(216,20%,88%)" }}>
         <div className="flex items-center justify-between mb-4">
           <h2 className="font-semibold text-base">Новая публикация</h2>
@@ -511,13 +551,48 @@ function CreatePostModal({ userInitials, onClose, onCreated }: { userInitials: s
           />
         </div>
 
-        {/* Media preview */}
+        {/* Слайдер превью для нескольких фото */}
+        {photoPreviews.length > 0 && (
+          <div className="relative mb-3 rounded-lg overflow-hidden" style={{ background: "#000" }}>
+            <img src={photoPreviews[slideIdx]} alt="preview" className="w-full object-contain rounded-lg" style={{ maxHeight: 220 }} />
+            {photoPreviews.length > 1 && (
+              <>
+                <button onClick={() => setSlideIdx(i => Math.max(0, i - 1))}
+                  className="absolute left-1 top-1/2 -translate-y-1/2 w-7 h-7 rounded-full flex items-center justify-center"
+                  style={{ background: "rgba(0,0,0,0.55)", color: "white", display: slideIdx === 0 ? "none" : "flex" }}>
+                  <Icon name="ChevronLeft" size={14} />
+                </button>
+                <button onClick={() => setSlideIdx(i => Math.min(photoPreviews.length - 1, i + 1))}
+                  className="absolute right-1 top-1/2 -translate-y-1/2 w-7 h-7 rounded-full flex items-center justify-center"
+                  style={{ background: "rgba(0,0,0,0.55)", color: "white", display: slideIdx === photoPreviews.length - 1 ? "none" : "flex" }}>
+                  <Icon name="ChevronRight" size={14} />
+                </button>
+                <div className="absolute bottom-2 left-0 right-0 flex justify-center gap-1">
+                  {photoPreviews.map((_, i) => (
+                    <button key={i} onClick={() => setSlideIdx(i)} className="w-1.5 h-1.5 rounded-full transition-all"
+                      style={{ background: i === slideIdx ? "white" : "rgba(255,255,255,0.45)" }} />
+                  ))}
+                </div>
+              </>
+            )}
+            <button onClick={() => removePhoto(slideIdx)}
+              className="absolute top-2 right-2 w-7 h-7 rounded-full flex items-center justify-center"
+              style={{ background: "rgba(0,0,0,0.6)", color: "white" }}>
+              <Icon name="X" size={14} />
+            </button>
+            <div className="absolute top-2 left-2 px-2 py-0.5 rounded-full text-xs" style={{ background: "rgba(0,0,0,0.55)", color: "white" }}>
+              {slideIdx + 1}/{photoPreviews.length}
+            </div>
+          </div>
+        )}
+
+        {/* Превью видео / одиночное фото */}
         {mediaPreview && (
           <div className="relative mb-3 rounded-lg overflow-hidden">
             {mediaFile?.type.startsWith("video/") ? (
-              <video src={mediaPreview} controls className="w-full max-h-48 rounded-lg" />
+              <video src={mediaPreview} controls className="w-full rounded-lg" style={{ maxHeight: 220, background: "#000" }} />
             ) : (
-              <img src={mediaPreview} alt="preview" className="w-full max-h-48 object-cover rounded-lg" />
+              <img src={mediaPreview} alt="preview" className="w-full object-contain rounded-lg" style={{ maxHeight: 220, background: "#000" }} />
             )}
             <button onClick={() => { setMediaPreview(""); setMediaFile(null); }}
               className="absolute top-2 right-2 w-7 h-7 rounded-full flex items-center justify-center"
@@ -542,7 +617,7 @@ function CreatePostModal({ userInitials, onClose, onCreated }: { userInitials: s
         {loading && uploadPercent > 0 && uploadPercent < 100 && (
           <div className="mb-3">
             <div className="flex justify-between text-xs mb-1" style={{ color: "hsl(220,15%,55%)" }}>
-              <span>{mediaFile ? "Загрузка файла..." : "Публикация..."}</span>
+              <span>{hasMedia ? "Загрузка файлов..." : "Публикация..."}</span>
               <span>{uploadPercent}%</span>
             </div>
             <div className="w-full h-1.5 rounded-full" style={{ background: "hsl(216,20%,90%)" }}>
@@ -552,13 +627,16 @@ function CreatePostModal({ userInitials, onClose, onCreated }: { userInitials: s
         )}
         <div className="flex justify-between items-center">
           <div className="flex gap-2">
+            <button onClick={() => multiInputRef.current?.click()} className="btn-outline text-xs px-3 py-1.5 flex items-center gap-1.5" disabled={loading}>
+              <Icon name="Images" size={13} />Фото
+            </button>
             <button onClick={() => fileInputRef.current?.click()} className="btn-outline text-xs px-3 py-1.5 flex items-center gap-1.5" disabled={loading}>
-              <Icon name="Image" size={13} />Фото/Видео
+              <Icon name="Video" size={13} />Видео
             </button>
           </div>
           <div className="flex gap-2">
             <button onClick={onClose} className="btn-outline text-xs px-4 py-2" disabled={loading}>Отмена</button>
-            <button onClick={submit} disabled={loading || (!text.trim() && !mediaFile)} className="btn-primary text-xs px-4 py-2" style={{ opacity: loading ? 0.7 : 1 }}>
+            <button onClick={submit} disabled={loading || !hasContent} className="btn-primary text-xs px-4 py-2" style={{ opacity: loading ? 0.7 : 1 }}>
               {loading ? <span className="flex items-center gap-1.5"><Icon name="Loader" size={12} className="animate-spin" />{uploadPercent < 90 ? "Загрузка..." : "Публикация..."}</span> : "Опубликовать"}
             </button>
           </div>
@@ -1396,7 +1474,7 @@ function GroupsPage({ currentUser }: { currentUser: User | null }) {
             </div>
             <div className="flex-1 min-w-0">
               <div className="font-semibold text-sm">{g.name}</div>
-              <div className="text-xs truncate" style={{ color: "hsl(220,15%,55%)" }}>{g.members_count} участников · {g.description || "Группа NEXUS"}</div>
+              <div className="text-xs truncate" style={{ color: "hsl(220,15%,55%)" }}>{g.members_count} участников · {g.description || "Группа CLANSE"}</div>
             </div>
             <div className="flex-shrink-0">
               {g.is_member ? (
@@ -1436,6 +1514,8 @@ function PostCard({ post, onLike, onCommentAdded, onDelete, userInitials, userAv
   const [likesUsers, setLikesUsers] = useState<{ id: number; full_name: string; job_title: string; avatar_url: string; initials: string }[]>([]);
   const [showLikes, setShowLikes] = useState(false);
   const [loadingLikes, setLoadingLikes] = useState(false);
+  const [slideIdx, setSlideIdx] = useState(0);
+  const photos = post.media_urls && post.media_urls.length > 1 ? post.media_urls : null;
 
   const toggleComments = async () => {
     if (!showComments && comments.length === 0) {
@@ -1513,19 +1593,64 @@ function PostCard({ post, onLike, onCommentAdded, onDelete, userInitials, userAv
       </div>
 
       {post.text && <p className="mt-3 text-sm leading-relaxed whitespace-pre-wrap" style={{ color: "hsl(220,25%,20%)" }}>{post.text}</p>}
-      {post.media_url && post.media_type === "image" && (
-        <div className="mt-3 relative cursor-pointer" onClick={() => setMediaViewer({ url: post.media_url!, type: "image" })}>
-          <img src={post.media_url} alt="media" className="w-full rounded-xl object-cover" style={{ maxHeight: "480px" }} />
-          <div className="absolute inset-0 rounded-xl flex items-center justify-center opacity-0 hover:opacity-100 transition-opacity" style={{ background: "rgba(0,0,0,0.15)" }}>
+
+      {/* Слайдер для нескольких фото */}
+      {photos && (
+        <div className="mt-3 relative rounded-xl overflow-hidden" style={{ background: "#000" }}>
+          <img
+            src={photos[slideIdx]}
+            alt="media"
+            className="w-full object-contain cursor-pointer"
+            style={{ maxHeight: 420 }}
+            onClick={() => setMediaViewer({ url: photos[slideIdx], type: "image" })}
+          />
+          {photos.length > 1 && (
+            <>
+              {slideIdx > 0 && (
+                <button onClick={() => setSlideIdx(i => i - 1)}
+                  className="absolute left-2 top-1/2 -translate-y-1/2 w-8 h-8 rounded-full flex items-center justify-center"
+                  style={{ background: "rgba(0,0,0,0.55)", color: "white" }}>
+                  <Icon name="ChevronLeft" size={16} />
+                </button>
+              )}
+              {slideIdx < photos.length - 1 && (
+                <button onClick={() => setSlideIdx(i => i + 1)}
+                  className="absolute right-2 top-1/2 -translate-y-1/2 w-8 h-8 rounded-full flex items-center justify-center"
+                  style={{ background: "rgba(0,0,0,0.55)", color: "white" }}>
+                  <Icon name="ChevronRight" size={16} />
+                </button>
+              )}
+              <div className="absolute bottom-2 left-0 right-0 flex justify-center gap-1.5">
+                {photos.map((_, i) => (
+                  <button key={i} onClick={() => setSlideIdx(i)}
+                    className="w-2 h-2 rounded-full transition-all"
+                    style={{ background: i === slideIdx ? "white" : "rgba(255,255,255,0.4)" }} />
+                ))}
+              </div>
+              <div className="absolute top-2 right-2 px-2 py-0.5 rounded-full text-xs" style={{ background: "rgba(0,0,0,0.55)", color: "white" }}>
+                {slideIdx + 1}/{photos.length}
+              </div>
+            </>
+          )}
+        </div>
+      )}
+
+      {/* Одиночное фото */}
+      {!photos && post.media_url && post.media_type === "image" && (
+        <div className="mt-3 relative cursor-pointer rounded-xl overflow-hidden" style={{ background: "#000" }} onClick={() => setMediaViewer({ url: post.media_url!, type: "image" })}>
+          <img src={post.media_url} alt="media" className="w-full object-contain" style={{ maxHeight: "480px" }} />
+          <div className="absolute inset-0 flex items-center justify-center opacity-0 hover:opacity-100 transition-opacity" style={{ background: "rgba(0,0,0,0.12)" }}>
             <div className="w-10 h-10 rounded-full flex items-center justify-center" style={{ background: "rgba(0,0,0,0.5)", color: "white" }}>
               <Icon name="Maximize2" size={18} />
             </div>
           </div>
         </div>
       )}
+
+      {/* Видео — широкоформатное */}
       {post.media_url && post.media_type === "video" && (
-        <div className="mt-3 relative">
-          <video src={post.media_url} controls className="w-full rounded-xl" style={{ maxHeight: "480px" }} />
+        <div className="mt-3 relative rounded-xl overflow-hidden" style={{ background: "#000" }}>
+          <video src={post.media_url} controls className="w-full rounded-xl" style={{ maxHeight: "520px", aspectRatio: "16/9" }} />
           <button className="absolute top-2 right-2 w-8 h-8 rounded-full flex items-center justify-center" style={{ background: "rgba(0,0,0,0.5)", color: "white" }}
             onClick={() => setMediaViewer({ url: post.media_url!, type: "video" })}>
             <Icon name="Maximize2" size={14} />
