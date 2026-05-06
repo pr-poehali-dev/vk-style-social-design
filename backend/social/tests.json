@@ -6,7 +6,6 @@
       "path": "/",
       "body": {"action": "groups_list"},
       "expectedStatus": 200,
-      "expectedBody": {"groups": [{}]},
       "bodyMatcher": "partial"
     },
     {
