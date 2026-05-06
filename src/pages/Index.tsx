@@ -7,7 +7,16 @@ const SOCIAL_URL = "https://functions.poehali.dev/1373884d-4344-47b3-a502-a1dfcf
 
 function getToken() { return localStorage.getItem("nexus_token") || ""; }
 
-const TIMEOUT_MS = 12000;
+// Прогрев функций при загрузке страницы (чтобы не было cold start при входе)
+function warmupFunctions() {
+  [AUTH_URL, POSTS_URL, SOCIAL_URL].forEach((url) => {
+    fetch(url, { method: "OPTIONS" }).catch(() => {});
+  });
+}
+if (typeof window !== "undefined") warmupFunctions();
+
+const TIMEOUT_MS = 20000;
+const TIMEOUT_AUTH_MS = 30000;
 const TIMEOUT_UPLOAD_MS = 120000;
 
 function fetchWithTimeout(input: RequestInfo, init?: RequestInit, timeoutMs = TIMEOUT_MS): Promise<Response> {
@@ -177,22 +186,28 @@ function readFileAsBase64(file: File): Promise<string> {
 }
 
 async function apiAuth(action: string, data: Record<string, string>) {
-  try {
-    const res = await fetchWithTimeout(AUTH_URL, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ action, ...data }),
-    });
-    const text = await res.text();
-    let json: Record<string, unknown>;
-    try { json = JSON.parse(text); } catch { json = {}; }
-    if (typeof json === "string") {
-      try { json = JSON.parse(json as string); } catch { json = {}; }
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      const res = await fetchWithTimeout(AUTH_URL, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action, ...data }),
+      }, TIMEOUT_AUTH_MS);
+      const text = await res.text();
+      let json: Record<string, unknown>;
+      try { json = JSON.parse(text); } catch { json = {}; }
+      if (typeof json === "string") {
+        try { json = JSON.parse(json as string); } catch { json = {}; }
+      }
+      return { ok: res.ok, status: res.status, data: json };
+    } catch {
+      if (attempt === 1) {
+        return { ok: false, status: 0, data: { error: "Сервер не отвечает. Попробуйте ещё раз." } };
+      }
+      await new Promise((r) => setTimeout(r, 2000));
     }
-    return { ok: res.ok, status: res.status, data: json };
-  } catch {
-    return { ok: false, status: 0, data: { error: "Нет соединения с сервером" } };
   }
+  return { ok: false, status: 0, data: { error: "Сервер не отвечает. Попробуйте ещё раз." } };
 }
 
 function AuthScreen({ onAuth }: { onAuth: (user: User, token: string) => void }) {
