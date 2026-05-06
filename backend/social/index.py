@@ -1,5 +1,5 @@
 """
-Социальные функции: подписки, уведомления, поиск людей, чат, медиа, аватар.
+Социальные функции: подписки, уведомления, поиск людей, чат, медиа, аватар. v2
 """
 import json, os, base64, uuid, mimetypes
 import psycopg2
@@ -73,7 +73,8 @@ def handler(event: dict, context) -> dict:
     method = event.get("httpMethod", "GET")
     body = {}
     if event.get("body"):
-        body = json.loads(event["body"])
+        try: body = json.loads(event["body"])
+        except Exception: pass
 
     token = (event.get("headers") or {}).get("X-Auth-Token", "")
     qs = event.get("queryStringParameters") or {}
@@ -416,7 +417,7 @@ def handler(event: dict, context) -> dict:
         if not file_data: return err(400, "Файл не передан")
         if "," in file_data: file_data = file_data.split(",", 1)[1]
         try: data_bytes = base64.b64decode(file_data)
-        except: return err(400, "Ошибка декодирования")
+        except Exception: return err(400, "Ошибка декодирования")
         if len(data_bytes) > 200 * 1024 * 1024: return err(400, "Файл слишком большой (макс 200 МБ)")
         ext = mimetypes.guess_extension(file_type) or ".bin"
         if ext == ".jpe": ext = ".jpg"
@@ -441,7 +442,7 @@ def handler(event: dict, context) -> dict:
         if not file_data: return err(400, "Файл не передан")
         if "," in file_data: file_data = file_data.split(",", 1)[1]
         try: data_bytes = base64.b64decode(file_data)
-        except: return err(400, "Ошибка декодирования")
+        except Exception: return err(400, "Ошибка декодирования")
         if len(data_bytes) > 10 * 1024 * 1024: return err(400, "Обложка не более 10 МБ")
         ext = mimetypes.guess_extension(file_type) or ".jpg"
         if ext == ".jpe": ext = ".jpg"
@@ -490,7 +491,7 @@ def handler(event: dict, context) -> dict:
         if not file_data: return err(400, "Файл не передан")
         if "," in file_data: file_data = file_data.split(",", 1)[1]
         try: data_bytes = base64.b64decode(file_data)
-        except: return err(400, "Ошибка декодирования")
+        except Exception: return err(400, "Ошибка декодирования")
         if len(data_bytes) > 5 * 1024 * 1024: return err(400, "Аватар не более 5 МБ")
         ext = mimetypes.guess_extension(file_type) or ".jpg"
         if ext == ".jpe": ext = ".jpg"
