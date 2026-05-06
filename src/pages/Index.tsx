@@ -1965,12 +1965,41 @@ function MessagesPage({ currentUser }: { currentUser: User | null }) {
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
   const fileRef = useRef<HTMLInputElement | null>(null);
   const docRef = useRef<HTMLInputElement | null>(null);
+  const activeConvRef = useRef<Conversation | null>(null);
+  const messagesRef = useRef<ChatMessage[]>([]);
+
+  useEffect(() => { activeConvRef.current = activeConv; }, [activeConv]);
+  useEffect(() => { messagesRef.current = messages; }, [messages]);
 
   useEffect(() => {
     apiPost(SOCIAL_URL, { action: "chat_list" }).then((r) => {
       setConvs((r.data.conversations as Conversation[]) || []);
       setLoadingConvs(false);
     });
+  }, []);
+
+  // Автообновление сообщений каждые 4 секунды
+  useEffect(() => {
+    const interval = setInterval(async () => {
+      const conv = activeConvRef.current;
+      if (!conv) return;
+      const r = await apiPost(SOCIAL_URL, { action: "chat_messages", conv_id: conv.id });
+      const newMessages = (r.data.messages as ChatMessage[]) || [];
+      if (newMessages.length !== messagesRef.current.length) {
+        setMessages(newMessages);
+      }
+    }, 4000);
+    return () => clearInterval(interval);
+  }, []);
+
+  // Автообновление списка диалогов каждые 10 секунд
+  useEffect(() => {
+    const interval = setInterval(() => {
+      apiPost(SOCIAL_URL, { action: "chat_list" }).then((r) => {
+        setConvs((r.data.conversations as Conversation[]) || []);
+      });
+    }, 10000);
+    return () => clearInterval(interval);
   }, []);
 
   useEffect(() => {
