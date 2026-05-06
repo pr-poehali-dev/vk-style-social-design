@@ -331,14 +331,16 @@ def handler(event: dict, context) -> dict:
         cur.execute(f"SELECT 1 FROM {SCHEMA}.conversations WHERE id=%s AND (user1_id=%s OR user2_id=%s)", (conv_id, uid, uid))
         if not cur.fetchone(): conn.close(); return err(403, "Нет доступа")
         cur.execute(f"""
-            SELECT m.id, m.sender_id, m.text, m.media_url, m.media_type, m.created_at, u.full_name, u.avatar_url
+            SELECT m.id, m.sender_id, m.text, m.media_url, m.media_type, m.created_at, u.full_name, u.avatar_url, m.is_read
             FROM {SCHEMA}.messages m JOIN {SCHEMA}.users u ON u.id=m.sender_id
             WHERE m.conversation_id=%s ORDER BY m.created_at ASC LIMIT 100""", (conv_id,))
-        rows = cur.fetchall(); conn.close()
+        rows = cur.fetchall()
+        cur.execute(f"UPDATE {SCHEMA}.messages SET is_read=TRUE WHERE conversation_id=%s AND sender_id != %s", (conv_id, uid))
+        conn.commit(); conn.close()
         msgs = [{"id": r[0], "sender_id": r[1], "text": r[2] or "", "media_url": r[3] or "",
                  "media_type": r[4] or "", "created_at": str(r[5]),
                  "sender_name": r[6], "sender_initials": initials(r[6]),
-                 "sender_avatar": r[7] or "", "is_me": r[1] == uid} for r in rows]
+                 "sender_avatar": r[7] or "", "is_me": r[1] == uid, "is_read": r[8]} for r in rows]
         return ok({"messages": msgs})
 
     # --- send message ---
@@ -363,8 +365,38 @@ def handler(event: dict, context) -> dict:
         cur.execute(f"UPDATE {SCHEMA}.conversations SET last_message_at=NOW() WHERE id=%s", (conv_id,))
         conn.commit(); conn.close()
         return ok({"message": {"id": mid, "text": text, "media_url": media_url, "media_type": media_type,
-            "created_at": str(cat), "is_me": True, "sender_id": uid,
+            "created_at": str(cat), "is_me": True, "is_read": False, "sender_id": uid,
             "sender_name": uname, "sender_initials": initials(uname), "conv_id": conv_id}})
+
+    # --- delete message ---
+    if action == "chat_delete_message":
+        if not token: return err(401, "Не авторизован")
+        msg_id = body.get("message_id")
+        if not msg_id: return err(400, "message_id обязателен")
+        conn = get_conn(); cur = conn.cursor()
+        user = get_user_by_token(cur, token)
+        if not user: conn.close(); return err(401, "Сессия истекла")
+        uid, _, _ = user
+        cur.execute(f"SELECT sender_id FROM {SCHEMA}.messages WHERE id=%s", (int(msg_id),))
+        row = cur.fetchone()
+        if not row: conn.close(); return err(404, "Сообщение не найдено")
+        if row[0] != uid: conn.close(); return err(403, "Нельзя удалить чужое сообщение")
+        cur.execute(f"DELETE FROM {SCHEMA}.messages WHERE id=%s", (int(msg_id),))
+        conn.commit(); conn.close()
+        return ok({"deleted": True})
+
+    # --- mark messages as read ---
+    if action == "chat_read":
+        if not token: return err(401, "Не авторизован")
+        conv_id = body.get("conv_id")
+        if not conv_id: return err(400, "conv_id обязателен")
+        conn = get_conn(); cur = conn.cursor()
+        user = get_user_by_token(cur, token)
+        if not user: conn.close(); return err(401, "Сессия истекла")
+        uid, _, _ = user
+        cur.execute(f"UPDATE {SCHEMA}.messages SET is_read=TRUE WHERE conversation_id=%s AND sender_id != %s", (int(conv_id), uid))
+        conn.commit(); conn.close()
+        return ok({"ok": True})
 
     # --- typing indicator: set ---
     if action == "typing_set":

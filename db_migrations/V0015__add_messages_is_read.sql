@@ -1,0 +1,1 @@
+ALTER TABLE t_p89645412_vk_style_social_desi.messages ADD COLUMN IF NOT EXISTS is_read BOOLEAN DEFAULT FALSE;

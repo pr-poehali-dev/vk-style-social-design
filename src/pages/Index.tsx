@@ -166,6 +166,7 @@ interface ChatMessage {
   sender_initials: string;
   sender_avatar: string;
   is_me: boolean;
+  is_read: boolean;
 }
 
 interface Conversation {
@@ -837,23 +838,26 @@ function UserProfilePage({ userId, currentUser, onBack, onOpenChat, onOpenProfil
                 : <div className="w-20 h-20 rounded-full border-4 flex items-center justify-center text-xl font-bold text-white" style={{ background: "hsl(213,80%,40%)", borderColor: "white" }}>{displayInitials}</div>}
             </div>
             {currentUser && !profile.is_me && (
-              <div className="flex gap-2 items-center pt-1 flex-wrap">
-                {!blocked && !blockedByThem && (
-                  <button className={following ? "btn-outline text-xs px-4 py-2" : "btn-primary text-xs px-4 py-2"} onClick={handleFollow}>
-                    {following ? "Подписан" : "+ Подписаться"}
+              <div className="flex flex-col gap-1.5 pt-1 items-end">
+                <div className="flex gap-1.5 items-center">
+                  {!blocked && !blockedByThem && (
+                    <button className={following ? "btn-outline text-xs px-3 py-1.5" : "btn-primary text-xs px-3 py-1.5"} onClick={handleFollow}>
+                      {following ? "Подписан" : "+ Подписаться"}
+                    </button>
+                  )}
+                  {!blocked && !blockedByThem && onOpenChat && (
+                    <button className="btn-outline text-xs px-3 py-1.5 flex items-center gap-1" onClick={() => onOpenChat(userId)}>
+                      <Icon name="MessageSquare" size={13} />Написать
+                    </button>
+                  )}
+                  <button
+                    className={`p-1.5 rounded border flex items-center justify-center transition-colors ${blocked ? "btn-primary" : "hover:bg-red-50"}`}
+                    style={{ color: blocked ? undefined : "hsl(0,72%,48%)", borderColor: blocked ? undefined : "hsl(0,72%,70%)" }}
+                    onClick={handleBlock} disabled={blockLoading}
+                    title={blockLoading ? "..." : blocked ? "В чёрном списке" : "Заблокировать"}>
+                    <Icon name={blocked ? "ShieldCheck" : "ShieldOff"} size={14} />
                   </button>
-                )}
-                {!blocked && !blockedByThem && onOpenChat && (
-                  <button className="btn-outline text-xs px-3 py-2 flex items-center gap-1.5" onClick={() => onOpenChat(userId)}>
-                    <Icon name="MessageSquare" size={14} />Написать
-                  </button>
-                )}
-                <button className={`text-xs px-3 py-2 rounded flex items-center gap-1.5 transition-colors ${blocked ? "btn-primary" : "btn-outline hover:bg-red-50"}`}
-                  style={{ color: blocked ? undefined : "hsl(0,72%,48%)" }}
-                  onClick={handleBlock} disabled={blockLoading}>
-                  <Icon name={blocked ? "ShieldCheck" : "ShieldOff"} size={13} />
-                  {blockLoading ? "..." : blocked ? "В чёрном списке" : "Заблокировать"}
-                </button>
+                </div>
               </div>
             )}
           </div>
@@ -2010,9 +2014,10 @@ function MessagesPage({ currentUser }: { currentUser: User | null }) {
       if (!conv) return;
       const r = await apiPost(SOCIAL_URL, { action: "chat_messages", conv_id: conv.id });
       const newMessages = (r.data.messages as ChatMessage[]) || [];
-      if (newMessages.length !== messagesRef.current.length) {
-        setMessages(newMessages);
-      }
+      const prev = messagesRef.current;
+      const changed = newMessages.length !== prev.length ||
+        newMessages.some((m, i) => m.is_read !== prev[i]?.is_read || m.id !== prev[i]?.id);
+      if (changed) setMessages(newMessages);
     }, 4000);
     return () => clearInterval(interval);
   }, []);
@@ -2063,6 +2068,11 @@ function MessagesPage({ currentUser }: { currentUser: User | null }) {
     const r = await apiPost(SOCIAL_URL, { action: "chat_messages", conv_id: conv.id });
     setMessages((r.data.messages as ChatMessage[]) || []);
     setLoadingMsgs(false);
+  };
+
+  const deleteMessage = async (msgId: number) => {
+    const r = await apiPost(SOCIAL_URL, { action: "chat_delete_message", message_id: msgId });
+    if (r.ok) setMessages((prev) => prev.filter((m) => m.id !== msgId));
   };
 
   const sendMessage = async (mediaUrl = "", mediaType = "") => {
@@ -2177,8 +2187,17 @@ function MessagesPage({ currentUser }: { currentUser: User | null }) {
             <div className="flex-1 overflow-y-auto px-3 py-4 space-y-2" style={{ background: "hsl(216,20%,97%)" }}>
               {loadingMsgs && <div className="text-center text-xs py-4" style={{ color: "hsl(220,15%,60%)" }}>Загрузка...</div>}
               {messages.map((msg) => (
-                <div key={msg.id} className={`flex items-end gap-2 ${msg.is_me ? "justify-end" : "justify-start"}`}>
+                <div key={msg.id} className={`flex items-end gap-1.5 group ${msg.is_me ? "justify-end" : "justify-start"}`}>
                   {!msg.is_me && <Avatar initials={msg.sender_initials} avatarUrl={msg.sender_avatar} size="sm" />}
+                  {msg.is_me && (
+                    <button
+                      className="opacity-0 group-hover:opacity-100 transition-opacity p-1 rounded hover:bg-red-50 flex-shrink-0 self-center"
+                      style={{ color: "hsl(0,72%,55%)" }}
+                      onClick={() => deleteMessage(msg.id)}
+                      title="Удалить сообщение">
+                      <Icon name="Trash2" size={12} />
+                    </button>
+                  )}
                   <div className={`max-w-xs md:max-w-sm ${msg.is_me ? "message-bubble-me" : "message-bubble-other"}`}>
                     {msg.media_url && msg.media_type === "image" && (
                       <img src={msg.media_url} alt="media" className="rounded-lg max-w-full max-h-52 object-cover mb-1 cursor-pointer" onClick={() => setMediaViewer({ url: msg.media_url, type: "image" })} />
@@ -2194,7 +2213,16 @@ function MessagesPage({ currentUser }: { currentUser: User | null }) {
                     )}
                     {msg.text && <p className="px-4 py-2.5 text-sm break-words">{msg.text}</p>}
                     {!msg.text && msg.media_url && <div className="px-4 pb-1" />}
-                    <div className="text-xs px-4 pb-2 text-right opacity-70">{timeAgo(msg.created_at)}</div>
+                    <div className="text-xs px-4 pb-2 text-right opacity-70 flex items-center justify-end gap-1">
+                      <span>{timeAgo(msg.created_at)}</span>
+                      {msg.is_me && (
+                        <Icon
+                          name={msg.is_read ? "CheckCheck" : "Check"}
+                          size={12}
+                          style={{ color: msg.is_read ? "hsl(199,80%,65%)" : "currentColor" }}
+                        />
+                      )}
+                    </div>
                   </div>
                   {msg.is_me && <Avatar initials={myInitials} avatarUrl={currentUser?.avatar_url} size="sm" />}
                 </div>
