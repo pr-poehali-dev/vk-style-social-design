@@ -354,6 +354,8 @@ def handler(event: dict, context) -> dict:
         user = get_user_by_token(cur, token)
         if not user: conn.close(); return err(401, "Сессия истекла")
         uid, uname, _ = user
+        cur.execute(f"SELECT 1 FROM {SCHEMA}.blacklist WHERE (user_id=%s AND blocked_id=%s) OR (user_id=%s AND blocked_id=%s)", (uid, int(partner_id), int(partner_id), uid))
+        if cur.fetchone(): conn.close(); return err(403, "Переписка с этим пользователем недоступна")
         conv_id = get_or_create_conv(cur, uid, int(partner_id))
         cur.execute(f"""INSERT INTO {SCHEMA}.messages (conversation_id, sender_id, text, media_url, media_type)
             VALUES (%s,%s,%s,%s,%s) RETURNING id, created_at""", (conv_id, uid, text, media_url, media_type))
@@ -863,7 +865,9 @@ def handler(event: dict, context) -> dict:
         uid = user[0]
         cur.execute(f"SELECT 1 FROM {SCHEMA}.blacklist WHERE user_id=%s AND blocked_id=%s", (uid, int(target_id)))
         blocked = cur.fetchone() is not None
+        cur.execute(f"SELECT 1 FROM {SCHEMA}.blacklist WHERE user_id=%s AND blocked_id=%s", (int(target_id), uid))
+        blocked_by_them = cur.fetchone() is not None
         conn.close()
-        return ok({"blocked": blocked})
+        return ok({"blocked": blocked, "blocked_by_them": blocked_by_them})
 
     return err(400, "Неизвестное действие")

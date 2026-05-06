@@ -275,7 +275,19 @@ def handler(event: dict, context) -> dict:
         if user[0] == target_id: conn.close(); return err(400, "Нельзя удалить себя")
         cur.execute(f"DELETE FROM {SCHEMA}.notifications WHERE user_id=%s OR actor_id=%s", (target_id, target_id))
         cur.execute(f"DELETE FROM {SCHEMA}.follows WHERE follower_id=%s OR following_id=%s", (target_id, target_id))
+        cur.execute(f"DELETE FROM {SCHEMA}.blacklist WHERE user_id=%s OR blocked_id=%s", (target_id, target_id))
         cur.execute(f"DELETE FROM {SCHEMA}.sessions WHERE user_id=%s", (target_id,))
+        cur.execute(f"DELETE FROM {SCHEMA}.password_resets WHERE user_id=%s", (target_id,))
+        cur.execute(f"DELETE FROM {SCHEMA}.group_post_likes WHERE user_id=%s", (target_id,))
+        cur.execute(f"DELETE FROM {SCHEMA}.group_post_comments WHERE user_id=%s", (target_id,))
+        cur.execute(f"DELETE FROM {SCHEMA}.group_posts WHERE user_id=%s", (target_id,))
+        cur.execute(f"DELETE FROM {SCHEMA}.group_members WHERE user_id=%s", (target_id,))
+        cur.execute(f"SELECT id FROM {SCHEMA}.conversations WHERE user1_id=%s OR user2_id=%s", (target_id, target_id))
+        conv_ids = [r[0] for r in cur.fetchall()]
+        for cid in conv_ids:
+            cur.execute(f"DELETE FROM {SCHEMA}.messages WHERE conversation_id=%s", (cid,))
+        cur.execute(f"DELETE FROM {SCHEMA}.conversations WHERE user1_id=%s OR user2_id=%s", (target_id, target_id))
+        cur.execute(f"DELETE FROM {SCHEMA}.typing_indicators WHERE user_id=%s", (target_id,))
         cur.execute(f"SELECT id FROM {SCHEMA}.posts WHERE user_id=%s", (target_id,))
         pids = [r[0] for r in cur.fetchall()]
         for pid in pids:

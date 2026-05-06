@@ -706,6 +706,7 @@ function UserProfilePage({ userId, currentUser, onBack, onOpenChat, onOpenProfil
   const [followersModal, setFollowersModal] = useState<"followers" | "following" | null>(null);
   const [followUsers, setFollowUsers] = useState<{ id: number; full_name: string; job_title: string; avatar_url: string; initials: string; is_following: boolean }[]>([]);
   const [blocked, setBlocked] = useState(false);
+  const [blockedByThem, setBlockedByThem] = useState(false);
   const [blockLoading, setBlockLoading] = useState(false);
 
   useEffect(() => {
@@ -722,7 +723,11 @@ function UserProfilePage({ userId, currentUser, onBack, onOpenChat, onOpenProfil
         setFollowersCount(p.stats.followers);
       }
       setPosts((postsR.data.posts as Post[]) || []);
-      if (blR.ok) setBlocked((blR.data as { blocked: boolean }).blocked);
+      if (blR.ok) {
+        const blData = blR.data as { blocked: boolean; blocked_by_them: boolean };
+        setBlocked(blData.blocked);
+        setBlockedByThem(blData.blocked_by_them);
+      }
       setLoading(false);
     });
   }, [userId]);
@@ -759,6 +764,19 @@ function UserProfilePage({ userId, currentUser, onBack, onOpenChat, onOpenProfil
 
   if (loading) return <div className="max-w-3xl mx-auto px-4 py-10"><div className="h-48 rounded-xl shimmer" /></div>;
   if (!profile) return <div className="text-center py-20 text-sm" style={{ color: "hsl(220,15%,55%)" }}>Профиль не найден</div>;
+
+  if (blockedByThem) return (
+    <div className="max-w-3xl mx-auto px-4 py-5">
+      <button className="flex items-center gap-2 text-sm mb-4" style={{ color: "hsl(213,80%,40%)" }} onClick={onBack}>
+        <Icon name="ArrowLeft" size={16} />Назад
+      </button>
+      <div className="post-card text-center py-16">
+        <Icon name="Shield" size={40} className="mx-auto mb-4 opacity-40" style={{ color: "hsl(220,15%,55%)" }} />
+        <div className="font-semibold text-base mb-1">Профиль недоступен</div>
+        <div className="text-sm" style={{ color: "hsl(220,15%,55%)" }}>Этот пользователь ограничил доступ к своему профилю</div>
+      </div>
+    </div>
+  );
 
   if (blocked) return (
     <div className="max-w-3xl mx-auto px-4 py-5">
@@ -819,12 +837,12 @@ function UserProfilePage({ userId, currentUser, onBack, onOpenChat, onOpenProfil
             </div>
             {currentUser && !profile.is_me && (
               <div className="flex gap-2 items-center pt-1 flex-wrap">
-                {!blocked && (
+                {!blocked && !blockedByThem && (
                   <button className={following ? "btn-outline text-xs px-4 py-2" : "btn-primary text-xs px-4 py-2"} onClick={handleFollow}>
                     {following ? "Подписан" : "+ Подписаться"}
                   </button>
                 )}
-                {!blocked && onOpenChat && (
+                {!blocked && !blockedByThem && onOpenChat && (
                   <button className="btn-outline text-xs px-3 py-2 flex items-center gap-1.5" onClick={() => onOpenChat(userId)}>
                     <Icon name="MessageSquare" size={14} />Написать
                   </button>
