@@ -803,7 +803,7 @@ function UserProfilePage({ userId, currentUser, onBack, onOpenChat, onOpenProfil
 
       <div className="post-card mb-4 p-0" style={{ overflow: "visible" }}>
         {/* Обложка */}
-        <div className="relative w-full rounded-t-xl overflow-hidden" style={{ height: 160 }}>
+        <div className="relative w-full rounded-t-xl overflow-hidden" style={{ height: 160, zIndex: 0 }}>
           {profile.cover_url
             ? <img src={profile.cover_url} alt="cover" className="w-full h-full object-cover" />
             : <div className="w-full h-full" style={{ background: "linear-gradient(135deg, hsl(221,55%,20%) 0%, hsl(213,80%,35%) 100%)" }} />}
@@ -812,7 +812,7 @@ function UserProfilePage({ userId, currentUser, onBack, onOpenChat, onOpenProfil
         <div className="px-5 pb-5">
           {/* Аватар + кнопки */}
           <div className="flex items-end justify-between -mt-10 mb-3">
-            <div className="flex-shrink-0 z-10 relative">
+            <div className="flex-shrink-0 relative" style={{ zIndex: 10 }}>
               {profile.avatar_url
                 ? <img src={profile.avatar_url} alt={displayInitials} className="w-20 h-20 rounded-full border-4 object-cover" style={{ borderColor: "white" }} />
                 : <div className="w-20 h-20 rounded-full border-4 flex items-center justify-center text-xl font-bold text-white" style={{ background: "hsl(213,80%,40%)", borderColor: "white" }}>{displayInitials}</div>}
@@ -2523,7 +2523,7 @@ function ProfilePage({ user, onUserUpdate, onOpenProfile, onStartChat, isAdmin }
     <div className="max-w-3xl mx-auto px-4 py-5">
       <div className="post-card mb-4 p-0" style={{ overflow: "visible" }}>
         {/* Cover — кликабельная, загрузка фото */}
-        <div className="relative w-full group cursor-pointer rounded-t-xl overflow-hidden" style={{ height: 160 }} onClick={() => coverInputRef.current?.click()}>
+        <div className="relative w-full group cursor-pointer rounded-t-xl overflow-hidden" style={{ height: 160, zIndex: 0 }} onClick={() => coverInputRef.current?.click()}>
           {user?.cover_url
             ? <img src={user.cover_url} alt="cover" className="w-full h-full object-cover" />
             : <div className="w-full h-full" style={{ background: "linear-gradient(135deg, hsl(221,55%,20%) 0%, hsl(213,80%,35%) 100%)" }} />}
@@ -2545,7 +2545,7 @@ function ProfilePage({ user, onUserUpdate, onOpenProfile, onStartChat, isAdmin }
         <div className="px-5 pb-5">
           {/* Avatar row — ниже обложки */}
           <div className="flex items-end justify-between -mt-10 mb-3">
-            <div className="relative flex-shrink-0 group cursor-pointer z-10" onClick={() => avatarInputRef.current?.click()}>
+            <div className="relative flex-shrink-0 group cursor-pointer" style={{ zIndex: 10 }} onClick={() => avatarInputRef.current?.click()}>
               {user?.avatar_url
                 ? <img src={user.avatar_url} alt={displayInitials} className="w-20 h-20 rounded-full border-4 object-cover" style={{ borderColor: "white" }} />
                 : <div className="w-20 h-20 rounded-full border-4 flex items-center justify-center text-xl font-bold text-white" style={{ background: "hsl(213,80%,40%)", borderColor: "white" }}>{displayInitials}</div>}
