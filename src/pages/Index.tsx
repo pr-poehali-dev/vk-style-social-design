@@ -790,6 +790,8 @@ function UserProfilePage({ userId, currentUser, onBack, onOpenChat, onOpenProfil
   const [blocked, setBlocked] = useState(false);
   const [blockedByThem, setBlockedByThem] = useState(false);
   const [blockLoading, setBlockLoading] = useState(false);
+  const [gridSlides, setGridSlides] = useState<Record<number, number>>({});
+  const [gridLikesModal, setGridLikesModal] = useState<{ postId: number; users: { id: number; full_name: string; job_title: string; avatar_url: string; initials: string }[]; loading: boolean } | null>(null);
 
   useEffect(() => {
     setLoading(true);
@@ -1012,6 +1014,9 @@ function UserProfilePage({ userId, currentUser, onBack, onOpenChat, onOpenProfil
 
       {loading && <div className="h-32 rounded-lg shimmer mb-4" />}
 
+      {gridLikesModal && (
+        <UsersListModal title="Лайкнули" users={gridLikesModal.users} loading={gridLikesModal.loading} onClose={() => setGridLikesModal(null)} />
+      )}
       {!loading && postView === "grid" && (
         <div>
           {mediaOnly.length > 0 && (
@@ -1019,32 +1024,66 @@ function UserProfilePage({ userId, currentUser, onBack, onOpenChat, onOpenProfil
               <div className="text-xs font-medium mb-2" style={{ color: "hsl(220,15%,50%)" }}>Фото и видео</div>
               <div className="grid grid-cols-3 gap-1.5 mb-4">
                 {mediaOnly.map((p) => {
-                  const thumbUrl = p.media_urls && p.media_urls.length > 0 ? p.media_urls[0] : p.media_url;
-                  const hasMany = p.media_urls && p.media_urls.length > 1;
+                  const photos = p.media_urls && p.media_urls.length > 1 ? p.media_urls : null;
+                  const slideI = gridSlides[p.id] || 0;
+                  const thumbUrl = photos ? photos[slideI] : (p.media_url || "");
                   return (
                     <div key={p.id} className="rounded-xl overflow-hidden" style={{ background: "hsl(220,20%,96%)" }}>
-                      <div className="relative aspect-square cursor-pointer group"
-                        onClick={() => setMediaViewer({ url: thumbUrl!, type: p.media_type || "image" })}>
+                      <div className="relative aspect-square" style={{ background: "#000" }}>
                         {p.media_type === "image"
-                          ? <img src={thumbUrl} alt="" className="w-full h-full object-cover" />
-                          : <div className="w-full h-full flex items-center justify-center" style={{ background: "hsl(221,25%,18%)" }}>
+                          ? <img src={thumbUrl} alt="" className="w-full h-full object-cover cursor-pointer"
+                              onClick={() => setMediaViewer({ url: thumbUrl, type: "image" })} />
+                          : <div className="w-full h-full flex items-center justify-center cursor-pointer" style={{ background: "hsl(221,25%,18%)" }}
+                              onClick={() => setMediaViewer({ url: p.media_url!, type: "video" })}>
                               <Icon name="Play" size={24} style={{ color: "white" }} />
                             </div>}
-                        {hasMany && (
-                          <div className="absolute top-1 right-1 px-1.5 py-0.5 rounded-full text-white flex items-center gap-0.5" style={{ background: "rgba(0,0,0,0.55)", fontSize: 10 }}>
-                            <Icon name="Images" size={9} />{p.media_urls!.length}
+                        {/* Слайдер стрелки */}
+                        {photos && slideI > 0 && (
+                          <button onClick={(e) => { e.stopPropagation(); setGridSlides(s => ({ ...s, [p.id]: slideI - 1 })); }}
+                            className="absolute left-0.5 top-1/2 -translate-y-1/2 w-5 h-5 rounded-full flex items-center justify-center"
+                            style={{ background: "rgba(0,0,0,0.6)", color: "white" }}>
+                            <Icon name="ChevronLeft" size={11} />
+                          </button>
+                        )}
+                        {photos && slideI < photos.length - 1 && (
+                          <button onClick={(e) => { e.stopPropagation(); setGridSlides(s => ({ ...s, [p.id]: slideI + 1 })); }}
+                            className="absolute right-0.5 top-1/2 -translate-y-1/2 w-5 h-5 rounded-full flex items-center justify-center"
+                            style={{ background: "rgba(0,0,0,0.6)", color: "white" }}>
+                            <Icon name="ChevronRight" size={11} />
+                          </button>
+                        )}
+                        {/* Точки-индикаторы */}
+                        {photos && (
+                          <div className="absolute bottom-1 left-0 right-0 flex justify-center gap-0.5">
+                            {photos.map((_, i) => (
+                              <div key={i} className="w-1 h-1 rounded-full" style={{ background: i === slideI ? "white" : "rgba(255,255,255,0.4)" }} />
+                            ))}
                           </div>
                         )}
-                        {p.media_type === "video" && <span className="absolute top-1 left-1"><Icon name="Video" size={12} style={{ color: "white" }} /></span>}
-                        <div className="absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center" style={{ background: "rgba(0,0,0,0.18)" }}>
-                          <Icon name="Maximize2" size={18} style={{ color: "white" }} />
-                        </div>
+                        {!photos && p.media_type === "video" && <span className="absolute top-1 left-1"><Icon name="Video" size={12} style={{ color: "white" }} /></span>}
+                        {photos && (
+                          <div className="absolute top-1 right-1 px-1 py-0.5 rounded-full text-white flex items-center gap-0.5" style={{ background: "rgba(0,0,0,0.55)", fontSize: 9 }}>
+                            {slideI + 1}/{photos.length}
+                          </div>
+                        )}
                       </div>
-                      <div className="flex items-center gap-3 px-2 py-1.5 text-xs" style={{ color: "hsl(220,15%,55%)" }}>
-                        <span className="flex items-center gap-1" style={{ color: p.liked ? "hsl(0,72%,51%)" : undefined }}>
-                          <Icon name="Heart" size={11} style={{ fill: p.liked ? "currentColor" : "none" }} />{p.likes_count > 0 ? p.likes_count : ""}
-                        </span>
-                        <span className="flex items-center gap-1"><Icon name="Eye" size={11} />{p.views_count}</span>
+                      <div className="flex items-center gap-1.5 px-2 py-1.5 text-xs" style={{ color: "hsl(220,15%,55%)" }}>
+                        <button className="flex items-center justify-center w-6 h-6 rounded transition-colors"
+                          style={{ color: p.liked ? "hsl(0,72%,51%)" : "hsl(220,15%,55%)" }}
+                          onClick={async () => { const r = await apiPost(POSTS_URL, { action: "like", post_id: p.id }); if (r.ok) setPosts(prev => prev.map(pp => pp.id === p.id ? { ...pp, liked: r.data.liked as boolean, likes_count: r.data.likes_count as number } : pp)); }}>
+                          <Icon name="Heart" size={12} style={{ fill: p.liked ? "currentColor" : "none" }} />
+                        </button>
+                        <button className="transition-colors hover:underline"
+                          style={{ color: p.likes_count > 0 ? "hsl(0,72%,51%)" : "hsl(220,15%,55%)", minWidth: 10 }}
+                          onClick={async () => {
+                            if (p.likes_count === 0) return;
+                            setGridLikesModal({ postId: p.id, users: [], loading: true });
+                            const r = await apiPost(POSTS_URL, { action: "get_likes_users", post_id: p.id });
+                            setGridLikesModal({ postId: p.id, users: (r.data?.users as { id: number; full_name: string; job_title: string; avatar_url: string; initials: string }[]) || [], loading: false });
+                          }}>
+                          {p.likes_count > 0 ? p.likes_count : ""}
+                        </button>
+                        <span className="flex items-center gap-0.5 ml-auto"><Icon name="Eye" size={10} />{p.views_count}</span>
                       </div>
                     </div>
                   );
@@ -2587,6 +2626,8 @@ function ProfilePage({ user, onUserUpdate, onOpenProfile, onStartChat, isAdmin }
   const [mediaViewer, setMediaViewer] = useState<{ url: string; type: string } | null>(null);
   const [showBlacklist, setShowBlacklist] = useState(false);
   const [blacklist, setBlacklist] = useState<{ id: number; full_name: string; job_title: string; avatar_url: string; initials: string }[]>([]);
+  const [gridSlides, setGridSlides] = useState<Record<number, number>>({});
+  const [gridLikesModal, setGridLikesModal] = useState<{ postId: number; users: { id: number; full_name: string; job_title: string; avatar_url: string; initials: string }[]; loading: boolean } | null>(null);
   const avatarInputRef = useRef<HTMLInputElement | null>(null);
   const coverInputRef = useRef<HTMLInputElement | null>(null);
 
@@ -2838,6 +2879,9 @@ function ProfilePage({ user, onUserUpdate, onOpenProfile, onStartChat, isAdmin }
 
       {loadingPosts && <div className="h-32 rounded-lg shimmer" />}
 
+      {gridLikesModal && (
+        <UsersListModal title="Лайкнули" users={gridLikesModal.users} loading={gridLikesModal.loading} onClose={() => setGridLikesModal(null)} />
+      )}
       {!loadingPosts && postView === "grid" && (
         <div>
           {mediaOnly.length > 0 && (
@@ -2845,34 +2889,64 @@ function ProfilePage({ user, onUserUpdate, onOpenProfile, onStartChat, isAdmin }
               <div className="text-xs font-medium mb-2" style={{ color: "hsl(220,15%,50%)" }}>Фото и видео</div>
               <div className="grid grid-cols-3 gap-1.5 mb-4">
                 {mediaOnly.map((p) => {
-                  const thumbUrl = p.media_urls && p.media_urls.length > 0 ? p.media_urls[0] : p.media_url;
-                  const hasMany = p.media_urls && p.media_urls.length > 1;
+                  const photos = p.media_urls && p.media_urls.length > 1 ? p.media_urls : null;
+                  const slideI = gridSlides[p.id] || 0;
+                  const thumbUrl = photos ? photos[slideI] : (p.media_url || "");
                   return (
                     <div key={p.id} className="rounded-xl overflow-hidden" style={{ background: "hsl(220,20%,96%)" }}>
-                      <div className="relative aspect-square cursor-pointer group"
-                        onClick={() => setMediaViewer({ url: thumbUrl!, type: p.media_type || "image" })}>
+                      <div className="relative aspect-square" style={{ background: "#000" }}>
                         {p.media_type === "image"
-                          ? <img src={thumbUrl} alt="" className="w-full h-full object-cover" />
-                          : <div className="w-full h-full flex items-center justify-center" style={{ background: "hsl(221,25%,18%)" }}>
+                          ? <img src={thumbUrl} alt="" className="w-full h-full object-cover cursor-pointer"
+                              onClick={() => setMediaViewer({ url: thumbUrl, type: "image" })} />
+                          : <div className="w-full h-full flex items-center justify-center cursor-pointer" style={{ background: "hsl(221,25%,18%)" }}
+                              onClick={() => setMediaViewer({ url: p.media_url!, type: "video" })}>
                               <Icon name="Play" size={24} style={{ color: "white" }} />
                             </div>}
-                        {hasMany && (
-                          <div className="absolute top-1 right-1 px-1.5 py-0.5 rounded-full text-white flex items-center gap-0.5" style={{ background: "rgba(0,0,0,0.55)", fontSize: 10 }}>
-                            <Icon name="Images" size={9} />{p.media_urls!.length}
+                        {photos && slideI > 0 && (
+                          <button onClick={(e) => { e.stopPropagation(); setGridSlides(s => ({ ...s, [p.id]: slideI - 1 })); }}
+                            className="absolute left-0.5 top-1/2 -translate-y-1/2 w-5 h-5 rounded-full flex items-center justify-center"
+                            style={{ background: "rgba(0,0,0,0.6)", color: "white" }}>
+                            <Icon name="ChevronLeft" size={11} />
+                          </button>
+                        )}
+                        {photos && slideI < photos.length - 1 && (
+                          <button onClick={(e) => { e.stopPropagation(); setGridSlides(s => ({ ...s, [p.id]: slideI + 1 })); }}
+                            className="absolute right-0.5 top-1/2 -translate-y-1/2 w-5 h-5 rounded-full flex items-center justify-center"
+                            style={{ background: "rgba(0,0,0,0.6)", color: "white" }}>
+                            <Icon name="ChevronRight" size={11} />
+                          </button>
+                        )}
+                        {photos && (
+                          <div className="absolute bottom-1 left-0 right-0 flex justify-center gap-0.5">
+                            {photos.map((_, i) => (
+                              <div key={i} className="w-1 h-1 rounded-full" style={{ background: i === slideI ? "white" : "rgba(255,255,255,0.4)" }} />
+                            ))}
                           </div>
                         )}
-                        {p.media_type === "video" && <span className="absolute top-1 left-1"><Icon name="Video" size={12} style={{ color: "white" }} /></span>}
-                        <div className="absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center" style={{ background: "rgba(0,0,0,0.18)" }}>
-                          <Icon name="Maximize2" size={18} style={{ color: "white" }} />
-                        </div>
+                        {!photos && p.media_type === "video" && <span className="absolute top-1 left-1"><Icon name="Video" size={12} style={{ color: "white" }} /></span>}
+                        {photos && (
+                          <div className="absolute top-1 right-1 px-1 py-0.5 rounded-full text-white" style={{ background: "rgba(0,0,0,0.55)", fontSize: 9 }}>
+                            {slideI + 1}/{photos.length}
+                          </div>
+                        )}
                       </div>
-                      <div className="flex items-center gap-3 px-2 py-1.5 text-xs" style={{ color: "hsl(220,15%,55%)" }}>
-                        <button className="flex items-center gap-1 transition-colors"
-                          style={{ color: p.liked ? "hsl(0,72%,51%)" : undefined }}
+                      <div className="flex items-center gap-1.5 px-2 py-1.5 text-xs" style={{ color: "hsl(220,15%,55%)" }}>
+                        <button className="flex items-center justify-center w-6 h-6 rounded transition-colors"
+                          style={{ color: p.liked ? "hsl(0,72%,51%)" : "hsl(220,15%,55%)" }}
                           onClick={async () => { const r = await apiPost(POSTS_URL, { action: "like", post_id: p.id }); if (r.ok) setUserPosts(prev => prev.map(pp => pp.id === p.id ? { ...pp, liked: r.data.liked as boolean, likes_count: r.data.likes_count as number } : pp)); }}>
-                          <Icon name="Heart" size={11} style={{ fill: p.liked ? "currentColor" : "none" }} />{p.likes_count > 0 ? p.likes_count : ""}
+                          <Icon name="Heart" size={12} style={{ fill: p.liked ? "currentColor" : "none" }} />
                         </button>
-                        <span className="flex items-center gap-1"><Icon name="Eye" size={11} />{p.views_count}</span>
+                        <button className="transition-colors hover:underline"
+                          style={{ color: p.likes_count > 0 ? "hsl(0,72%,51%)" : "hsl(220,15%,55%)", minWidth: 10 }}
+                          onClick={async () => {
+                            if (p.likes_count === 0) return;
+                            setGridLikesModal({ postId: p.id, users: [], loading: true });
+                            const r = await apiPost(POSTS_URL, { action: "get_likes_users", post_id: p.id });
+                            setGridLikesModal({ postId: p.id, users: (r.data?.users as { id: number; full_name: string; job_title: string; avatar_url: string; initials: string }[]) || [], loading: false });
+                          }}>
+                          {p.likes_count > 0 ? p.likes_count : ""}
+                        </button>
+                        <span className="flex items-center gap-0.5 ml-auto"><Icon name="Eye" size={10} />{p.views_count}</span>
                       </div>
                     </div>
                   );
