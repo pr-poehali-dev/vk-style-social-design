@@ -187,6 +187,45 @@ function readFileAsBase64(file: File): Promise<string> {
   });
 }
 
+// Загрузка видео напрямую в S3 через presigned URL (обход лимита JSON)
+async function uploadVideoDirectly(
+  file: File,
+  onProgress?: (pct: number) => void
+): Promise<{ url: string; media_type: string } | { error: string }> {
+  try {
+    // 1. Получаем presigned URL от нашего бэкенда
+    const r = await apiPost(SOCIAL_URL, {
+      action: "get_upload_url",
+      file_type: file.type || "video/mp4",
+      file_name: file.name,
+    });
+    if (!r.ok) return { error: (r.data.error as string) || "Ошибка получения URL загрузки" };
+    const { upload_url, cdn_url } = r.data as { upload_url: string; cdn_url: string };
+
+    // 2. Загружаем файл напрямую в S3 с прогрессом
+    await new Promise<void>((resolve, reject) => {
+      const xhr = new XMLHttpRequest();
+      xhr.open("PUT", upload_url);
+      xhr.setRequestHeader("Content-Type", file.type || "video/mp4");
+      xhr.upload.onprogress = (e) => {
+        if (e.lengthComputable && onProgress) onProgress(Math.round((e.loaded / e.total) * 100));
+      };
+      xhr.onload = () => {
+        if (xhr.status >= 200 && xhr.status < 300) resolve();
+        else reject(new Error(`S3 upload failed: ${xhr.status}`));
+      };
+      xhr.onerror = () => reject(new Error("Ошибка сети при загрузке"));
+      xhr.ontimeout = () => reject(new Error("Таймаут загрузки"));
+      xhr.timeout = 10 * 60 * 1000; // 10 минут
+      xhr.send(file);
+    });
+
+    return { url: cdn_url, media_type: "video" };
+  } catch (e: unknown) {
+    return { error: (e as Error).message || "Ошибка загрузки видео" };
+  }
+}
+
 async function apiAuth(action: string, data: Record<string, string>) {
   for (let attempt = 0; attempt < 2; attempt++) {
     try {
@@ -508,14 +547,25 @@ function CreatePostModal({ userInitials, onClose, onCreated }: { userInitials: s
       media_type = "image";
     } else if (mediaFile || photoFiles.length === 1) {
       const f = mediaFile || photoFiles[0];
-      setUploadPercent(15);
-      const b64 = await readFileAsBase64(f);
-      setUploadPercent(55);
-      const r = await apiPost(SOCIAL_URL, { action: "upload_media", file_data: b64, file_type: f.type }, true);
-      setUploadPercent(85);
-      if (!r.ok) { setError((r.data.error as string) || "Ошибка загрузки файла"); setLoading(false); setUploadPercent(0); return; }
-      media_url = r.data.url as string;
-      media_type = r.data.media_type as string;
+      if (f.type.startsWith("video/") || f.type === "") {
+        // Видео: загружаем напрямую в S3 через presigned URL (без base64 JSON)
+        setUploadPercent(5);
+        const result = await uploadVideoDirectly(f, (pct) => setUploadPercent(5 + Math.round(pct * 0.8)));
+        if ("error" in result) { setError(result.error); setLoading(false); setUploadPercent(0); return; }
+        media_url = result.url;
+        media_type = result.media_type;
+        setUploadPercent(88);
+      } else {
+        // Фото и документы: base64 JSON (работает хорошо для малых файлов)
+        setUploadPercent(15);
+        const b64 = await readFileAsBase64(f);
+        setUploadPercent(55);
+        const r = await apiPost(SOCIAL_URL, { action: "upload_media", file_data: b64, file_type: f.type }, true);
+        setUploadPercent(85);
+        if (!r.ok) { setError((r.data.error as string) || "Ошибка загрузки файла"); setLoading(false); setUploadPercent(0); return; }
+        media_url = r.data.url as string;
+        media_type = r.data.media_type as string;
+      }
     }
 
     const r = await apiPost(POSTS_URL, { action: "create", text: text.trim(), tags: tags.trim(), media_url, media_type, media_urls });
@@ -1311,13 +1361,22 @@ function GroupDetailPage({ group, currentUser, onBack, onOpenProfile }: { group:
         media_url = media_urls[0]; media_type = "image";
       } else if (mediaFile || photoFiles.length === 1) {
         const f = mediaFile || photoFiles[0];
-        setUploadProgress(10);
-        const b64 = await readFileAsBase64(f);
-        setUploadProgress(55);
-        const r2 = await apiPost(SOCIAL_URL, { action: "upload_media", file_data: b64, file_type: f.type }, true);
-        setUploadProgress(85);
-        if (!r2.ok) { alert(r2.data?.error || "Ошибка загрузки файла"); setPosting(false); setUploadProgress(0); return; }
-        media_url = r2.data.url as string; media_type = r2.data.media_type as string;
+        if (f.type.startsWith("video/") || f.type === "") {
+          // Видео: прямая загрузка в S3
+          setUploadProgress(5);
+          const result = await uploadVideoDirectly(f, (pct) => setUploadProgress(5 + Math.round(pct * 0.8)));
+          if ("error" in result) { alert(result.error); setPosting(false); setUploadProgress(0); return; }
+          media_url = result.url; media_type = result.media_type;
+          setUploadProgress(88);
+        } else {
+          setUploadProgress(10);
+          const b64 = await readFileAsBase64(f);
+          setUploadProgress(55);
+          const r2 = await apiPost(SOCIAL_URL, { action: "upload_media", file_data: b64, file_type: f.type }, true);
+          setUploadProgress(85);
+          if (!r2.ok) { alert(r2.data?.error || "Ошибка загрузки файла"); setPosting(false); setUploadProgress(0); return; }
+          media_url = r2.data.url as string; media_type = r2.data.media_type as string;
+        }
       }
     } catch { alert("Ошибка чтения файла"); setPosting(false); return; }
     const r = await apiPost(SOCIAL_URL, { action: "group_post_create", group_id: group.id, text: newPostText.trim(), media_url, media_type, media_urls });

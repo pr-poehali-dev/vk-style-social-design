@@ -31,6 +31,14 @@
       "body": {"action": "blacklist_add", "user_id": 1},
       "expectedStatus": 401,
       "bodyMatcher": "partial"
+    },
+    {
+      "name": "Upload media without token",
+      "method": "POST",
+      "path": "/",
+      "body": {"action": "upload_media", "file_data": "", "file_type": "video/mp4"},
+      "expectedStatus": 401,
+      "bodyMatcher": "partial"
     }
   ]
 }

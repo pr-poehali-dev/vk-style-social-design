@@ -515,6 +515,33 @@ def handler(event: dict, context) -> dict:
             media_kind = "document"
         return ok({"url": f"{cdn_base}/{key}", "media_type": media_kind})
 
+    # --- presigned URL для прямой загрузки видео в S3 (обход лимита JSON) ---
+    if action == "get_upload_url":
+        if not token: return err(401, "Не авторизован")
+        file_type = body.get("file_type", "video/mp4")
+        file_name = body.get("file_name", "video")
+        # Определяем расширение
+        ext_map = {
+            "video/mp4": ".mp4", "video/webm": ".webm", "video/ogg": ".ogv",
+            "video/quicktime": ".mov", "video/x-msvideo": ".avi",
+            "video/3gpp": ".3gp", "video/3gpp2": ".3g2",
+            "video/x-matroska": ".mkv", "video/mpeg": ".mpeg",
+        }
+        ext = ext_map.get(file_type, "")
+        if not ext:
+            import mimetypes as _mt
+            ext = _mt.guess_extension(file_type) or ".bin"
+        key = f"clanse/media/{uuid.uuid4().hex}{ext}"
+        s3 = get_s3()
+        # Генерируем presigned URL на 10 минут
+        presigned = s3.generate_presigned_url(
+            "put_object",
+            Params={"Bucket": BUCKET, "Key": key, "ContentType": file_type},
+            ExpiresIn=600
+        )
+        cdn_url = f"{cdn_base}/{key}"
+        return ok({"upload_url": presigned, "cdn_url": cdn_url, "key": key})
+
     # --- upload multiple media (до 10 фото) ---
     if action == "upload_media_multi":
         if not token: return err(401, "Не авторизован")
