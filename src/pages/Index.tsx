@@ -647,22 +647,76 @@ function CreatePostModal({ userInitials, onClose, onCreated }: { userInitials: s
 }
 
 // ─── MediaViewer ──────────────────────────────────────────────────────────────
-function MediaViewer({ url, type, onClose }: { url: string; type: string; onClose: () => void }) {
+function MediaViewer({ url, type, onClose, urls, startIndex }: {
+  url: string; type: string; onClose: () => void;
+  urls?: string[]; startIndex?: number;
+}) {
+  const photos = urls && urls.length > 1 ? urls : null;
+  const [idx, setIdx] = useState(startIndex ?? (photos ? photos.indexOf(url) : 0));
+  const currentUrl = photos ? photos[Math.max(0, Math.min(idx, photos.length - 1))] : url;
+
   useEffect(() => {
-    const handle = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
+    const handle = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+      if (photos) {
+        if (e.key === "ArrowLeft") setIdx(i => Math.max(0, i - 1));
+        if (e.key === "ArrowRight") setIdx(i => Math.min(photos.length - 1, i + 1));
+      }
+    };
     document.addEventListener("keydown", handle);
     return () => document.removeEventListener("keydown", handle);
-  }, [onClose]);
+  }, [onClose, photos]);
+
   return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center" style={{ background: "rgba(0,0,0,0.95)" }} onClick={onClose}>
+    <div className="fixed inset-0 z-[100] flex items-center justify-center" style={{ background: "rgba(0,0,0,0.96)" }} onClick={onClose}>
       <button className="absolute top-4 right-4 w-10 h-10 rounded-full flex items-center justify-center z-10" style={{ background: "rgba(255,255,255,0.15)", color: "white" }} onClick={onClose}>
         <Icon name="X" size={20} />
       </button>
-      <div onClick={(e) => e.stopPropagation()} className="max-w-full max-h-full flex items-center justify-center p-4">
+      {/* Счётчик фото */}
+      {photos && (
+        <div className="absolute top-4 left-1/2 -translate-x-1/2 px-3 py-1 rounded-full text-white text-sm z-10" style={{ background: "rgba(0,0,0,0.5)" }}>
+          {idx + 1} / {photos.length}
+        </div>
+      )}
+      {/* Стрелка влево */}
+      {photos && idx > 0 && (
+        <button className="absolute left-3 top-1/2 -translate-y-1/2 w-10 h-10 rounded-full flex items-center justify-center z-10"
+          style={{ background: "rgba(255,255,255,0.15)", color: "white" }}
+          onClick={(e) => { e.stopPropagation(); setIdx(i => i - 1); }}>
+          <Icon name="ChevronLeft" size={22} />
+        </button>
+      )}
+      {/* Стрелка вправо */}
+      {photos && idx < photos.length - 1 && (
+        <button className="absolute right-3 top-1/2 -translate-y-1/2 w-10 h-10 rounded-full flex items-center justify-center z-10"
+          style={{ background: "rgba(255,255,255,0.15)", color: "white" }}
+          onClick={(e) => { e.stopPropagation(); setIdx(i => i + 1); }}>
+          <Icon name="ChevronRight" size={22} />
+        </button>
+      )}
+      <div onClick={(e) => e.stopPropagation()} className="flex items-center justify-center" style={{ maxWidth: "95vw", maxHeight: "90vh" }}>
         {type === "video"
-          ? <video src={url} controls autoPlay className="max-w-screen max-h-screen rounded-lg" style={{ maxWidth: "95vw", maxHeight: "90vh" }} />
-          : <img src={url} alt="media" className="rounded-lg" style={{ maxWidth: "95vw", maxHeight: "90vh", objectFit: "contain" }} />}
+          ? <video key={currentUrl} controls autoPlay playsInline preload="metadata"
+              className="rounded-lg"
+              style={{ maxWidth: "95vw", maxHeight: "90vh", width: "100%", background: "#000" }}>
+              <source src={currentUrl} type="video/mp4" />
+              <source src={currentUrl} type="video/webm" />
+              <source src={currentUrl} type="video/ogg" />
+              <source src={currentUrl} type="video/quicktime" />
+              <source src={currentUrl} />
+            </video>
+          : <img src={currentUrl} alt="media" className="rounded-lg" style={{ maxWidth: "95vw", maxHeight: "90vh", objectFit: "contain" }} />}
       </div>
+      {/* Точки-индикаторы */}
+      {photos && (
+        <div className="absolute bottom-4 left-0 right-0 flex justify-center gap-1.5">
+          {photos.map((_, i) => (
+            <button key={i} onClick={(e) => { e.stopPropagation(); setIdx(i); }}
+              className="w-2 h-2 rounded-full transition-all"
+              style={{ background: i === idx ? "white" : "rgba(255,255,255,0.35)" }} />
+          ))}
+        </div>
+      )}
     </div>
   );
 }
@@ -1015,7 +1069,7 @@ function UserProfilePage({ userId, currentUser, onBack, onOpenChat, onOpenProfil
       {loading && <div className="h-32 rounded-lg shimmer mb-4" />}
 
       {gridLikesModal && (
-        <UsersListModal title="Лайкнули" users={gridLikesModal.users} loading={gridLikesModal.loading} onClose={() => setGridLikesModal(null)} />
+        <UsersListModal title="Лайкнули" users={gridLikesModal.users} loading={gridLikesModal.loading} onClose={() => setGridLikesModal(null)} onOpenProfile={onOpenProfile} />
       )}
       {!loading && postView === "grid" && (
         <div>
@@ -1027,12 +1081,13 @@ function UserProfilePage({ userId, currentUser, onBack, onOpenChat, onOpenProfil
                   const photos = p.media_urls && p.media_urls.length > 1 ? p.media_urls : null;
                   const slideI = gridSlides[p.id] || 0;
                   const thumbUrl = photos ? photos[slideI] : (p.media_url || "");
+                  const allUrls = photos || (p.media_url ? [p.media_url] : undefined);
                   return (
                     <div key={p.id} className="rounded-xl overflow-hidden" style={{ background: "hsl(220,20%,96%)" }}>
                       <div className="relative aspect-square" style={{ background: "#000" }}>
                         {p.media_type === "image"
                           ? <img src={thumbUrl} alt="" className="w-full h-full object-cover cursor-pointer"
-                              onClick={() => setMediaViewer({ url: thumbUrl, type: "image" })} />
+                              onClick={() => setMediaViewer({ url: thumbUrl, type: "image", urls: allUrls, startIndex: slideI })} />
                           : <div className="w-full h-full flex items-center justify-center cursor-pointer" style={{ background: "hsl(221,25%,18%)" }}
                               onClick={() => setMediaViewer({ url: p.media_url!, type: "video" })}>
                               <Icon name="Play" size={24} style={{ color: "white" }} />
@@ -1371,7 +1426,12 @@ function GroupDetailPage({ group, currentUser, onBack }: { group: Group; current
                   <img src={p.media_url} className="w-full rounded-lg max-h-80 object-cover cursor-pointer mb-3" onClick={() => setMediaViewer({ url: p.media_url, type: "image" })} />
                 )}
                 {p.media_url && p.media_type === "video" && (
-                  <video src={p.media_url} controls className="w-full rounded-lg max-h-80 mb-3" />
+                  <video controls playsInline preload="metadata" className="w-full rounded-lg max-h-80 mb-3" style={{ background: "#000" }}>
+                    <source src={p.media_url} type="video/mp4" />
+                    <source src={p.media_url} type="video/webm" />
+                    <source src={p.media_url} type="video/quicktime" />
+                    <source src={p.media_url} />
+                  </video>
                 )}
                 {p.media_url && p.media_type === "document" && (
                   <a href={p.media_url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-2 px-3 py-2 rounded-lg mb-3 text-sm" style={{ background: "hsl(216,20%,96%)", color: "hsl(213,80%,40%)" }}>
@@ -1564,7 +1624,7 @@ function PostCard({ post, onLike, onCommentAdded, onDelete, userInitials, userAv
   const [sharing, setSharing] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
-  const [mediaViewer, setMediaViewer] = useState<{ url: string; type: string } | null>(null);
+  const [mediaViewer, setMediaViewer] = useState<{ url: string; type: string; urls?: string[]; startIndex?: number } | null>(null);
   const [showShare, setShowShare] = useState(false);
   const [likesUsers, setLikesUsers] = useState<{ id: number; full_name: string; job_title: string; avatar_url: string; initials: string }[]>([]);
   const [showLikes, setShowLikes] = useState(false);
@@ -1616,10 +1676,10 @@ function PostCard({ post, onLike, onCommentAdded, onDelete, userInitials, userAv
 
   return (
     <div className="post-card">
-      {mediaViewer && <MediaViewer url={mediaViewer.url} type={mediaViewer.type} onClose={() => setMediaViewer(null)} />}
+      {mediaViewer && <MediaViewer url={mediaViewer.url} type={mediaViewer.type} urls={mediaViewer.urls} startIndex={mediaViewer.startIndex} onClose={() => setMediaViewer(null)} />}
       {showShare && <ShareModal postId={post.id} text={post.text} onClose={() => { setShowShare(false); setShareCount(c => c + 1); }} />}
       {showLikes && (
-        <UsersListModal title="Лайкнули" users={likesUsers} loading={loadingLikes} onClose={() => setShowLikes(false)} />
+        <UsersListModal title="Лайкнули" users={likesUsers} loading={loadingLikes} onClose={() => setShowLikes(false)} onOpenProfile={onOpenProfile} />
       )}
 
       <div className="flex items-start gap-3">
@@ -1658,7 +1718,7 @@ function PostCard({ post, onLike, onCommentAdded, onDelete, userInitials, userAv
             alt="media"
             className="w-full object-contain cursor-pointer"
             style={{ maxHeight: 420 }}
-            onClick={() => setMediaViewer({ url: photos[slideIdx], type: "image" })}
+            onClick={() => setMediaViewer({ url: photos[slideIdx], type: "image", urls: photos, startIndex: slideIdx })}
           />
           {photos.length > 1 && (
             <>
@@ -1706,7 +1766,13 @@ function PostCard({ post, onLike, onCommentAdded, onDelete, userInitials, userAv
       {/* Видео — широкоформатное */}
       {post.media_url && post.media_type === "video" && (
         <div className="mt-3 relative rounded-xl overflow-hidden" style={{ background: "#000" }}>
-          <video src={post.media_url} controls className="w-full rounded-xl" style={{ maxHeight: "520px", aspectRatio: "16/9" }} />
+          <video controls playsInline preload="metadata" className="w-full rounded-xl" style={{ maxHeight: "520px", aspectRatio: "16/9", background: "#000" }}>
+            <source src={post.media_url} type="video/mp4" />
+            <source src={post.media_url} type="video/webm" />
+            <source src={post.media_url} type="video/ogg" />
+            <source src={post.media_url} type="video/quicktime" />
+            <source src={post.media_url} />
+          </video>
           <button className="absolute top-2 right-2 w-8 h-8 rounded-full flex items-center justify-center" style={{ background: "rgba(0,0,0,0.5)", color: "white" }}
             onClick={() => setMediaViewer({ url: post.media_url!, type: "video" })}>
             <Icon name="Maximize2" size={14} />
@@ -2880,7 +2946,7 @@ function ProfilePage({ user, onUserUpdate, onOpenProfile, onStartChat, isAdmin }
       {loadingPosts && <div className="h-32 rounded-lg shimmer" />}
 
       {gridLikesModal && (
-        <UsersListModal title="Лайкнули" users={gridLikesModal.users} loading={gridLikesModal.loading} onClose={() => setGridLikesModal(null)} />
+        <UsersListModal title="Лайкнули" users={gridLikesModal.users} loading={gridLikesModal.loading} onClose={() => setGridLikesModal(null)} onOpenProfile={onOpenProfile} />
       )}
       {!loadingPosts && postView === "grid" && (
         <div>
@@ -2892,12 +2958,13 @@ function ProfilePage({ user, onUserUpdate, onOpenProfile, onStartChat, isAdmin }
                   const photos = p.media_urls && p.media_urls.length > 1 ? p.media_urls : null;
                   const slideI = gridSlides[p.id] || 0;
                   const thumbUrl = photos ? photos[slideI] : (p.media_url || "");
+                  const allUrls = photos || (p.media_url ? [p.media_url] : undefined);
                   return (
                     <div key={p.id} className="rounded-xl overflow-hidden" style={{ background: "hsl(220,20%,96%)" }}>
                       <div className="relative aspect-square" style={{ background: "#000" }}>
                         {p.media_type === "image"
                           ? <img src={thumbUrl} alt="" className="w-full h-full object-cover cursor-pointer"
-                              onClick={() => setMediaViewer({ url: thumbUrl, type: "image" })} />
+                              onClick={() => setMediaViewer({ url: thumbUrl, type: "image", urls: allUrls, startIndex: slideI })} />
                           : <div className="w-full h-full flex items-center justify-center cursor-pointer" style={{ background: "hsl(221,25%,18%)" }}
                               onClick={() => setMediaViewer({ url: p.media_url!, type: "video" })}>
                               <Icon name="Play" size={24} style={{ color: "white" }} />

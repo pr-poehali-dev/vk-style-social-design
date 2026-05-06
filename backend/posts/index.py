@@ -378,7 +378,7 @@ def handler(event: dict, context) -> dict:
         conn = get_conn(); cur = conn.cursor()
         cur.execute(f"""SELECT u.id, u.full_name, u.job_title, u.avatar_url
             FROM {SCHEMA}.post_likes pl JOIN {SCHEMA}.users u ON u.id=pl.user_id
-            WHERE pl.post_id=%s ORDER BY pl.created_at DESC LIMIT 100""", (post_id,))
+            WHERE pl.post_id=%s LIMIT 100""", (int(post_id),))
         rows = cur.fetchall(); conn.close()
         return ok({"users": [{"id": r[0], "full_name": r[1], "job_title": r[2] or "",
             "avatar_url": r[3] or "", "initials": "".join(w[0] for w in r[1].split() if w)[:2].upper()} for r in rows]})
