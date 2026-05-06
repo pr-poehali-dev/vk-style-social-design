@@ -1,11 +1,11 @@
 {
   "tests": [
     {
-      "name": "Get feed returns 200",
-      "method": "POST",
+      "name": "Get feed without auth",
+      "method": "GET",
       "path": "/",
-      "body": {"action": "feed"},
       "expectedStatus": 200,
+      "expectedBody": {"posts": []},
       "bodyMatcher": "partial"
     },
     {
