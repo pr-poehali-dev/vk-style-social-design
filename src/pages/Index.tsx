@@ -451,7 +451,8 @@ function CreatePostModal({ userInitials, onClose, onCreated }: { userInitials: s
   const handleMediaSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    if (file.size > 100 * 1024 * 1024) { setError("Файл не более 100 МБ"); return; }
+    if (file.type.startsWith("video/") && file.size > 15 * 1024 * 1024) { setError("Видео не более 15 МБ. Сожмите файл или обрежьте длину."); return; }
+    if (!file.type.startsWith("video/") && file.size > 100 * 1024 * 1024) { setError("Файл не более 100 МБ"); return; }
     setMediaFile(file);
     if (file.type.startsWith("image/")) {
       const b64 = await readFileAsBase64(file);
@@ -1070,8 +1071,12 @@ function GroupDetailPage({ group, currentUser, onBack }: { group: Group; current
 
   const handlePost = async () => {
     if (!newPostText.trim() && !mediaFile) return;
-    if (mediaFile && mediaFile.size > 150 * 1024 * 1024) {
-      alert("Файл слишком большой. Максимальный размер — 150 МБ.");
+    if (mediaFile && mediaFile.type.startsWith("video/") && mediaFile.size > 15 * 1024 * 1024) {
+      alert("Видео не более 15 МБ. Сожмите файл или обрежьте длину.");
+      return;
+    }
+    if (mediaFile && !mediaFile.type.startsWith("video/") && mediaFile.size > 100 * 1024 * 1024) {
+      alert("Файл слишком большой. Максимальный размер — 100 МБ.");
       return;
     }
     setPosting(true);
@@ -2078,7 +2083,8 @@ function MessagesPage({ currentUser }: { currentUser: User | null }) {
   const handleFileSend = async (e: React.ChangeEvent<HTMLInputElement>, isDoc = false) => {
     const file = e.target.files?.[0];
     if (!file || !activeConv) return;
-    if (file.size > 150 * 1024 * 1024) { alert("Файл слишком большой. Максимальный размер — 150 МБ."); return; }
+    if (file.type.startsWith("video/") && file.size > 15 * 1024 * 1024) { alert("Видео не более 15 МБ. Сожмите файл или обрежьте длину."); return; }
+    if (!file.type.startsWith("video/") && file.size > 100 * 1024 * 1024) { alert("Файл слишком большой. Максимальный размер — 100 МБ."); return; }
     setSendingMedia(true);
     let b64: string;
     try { b64 = await readFileAsBase64(file); } catch { alert("Не удалось прочитать файл."); setSendingMedia(false); return; }

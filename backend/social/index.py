@@ -449,7 +449,8 @@ def handler(event: dict, context) -> dict:
         if "," in file_data: file_data = file_data.split(",", 1)[1]
         try: data_bytes = base64.b64decode(file_data)
         except Exception: return err(400, "Ошибка декодирования")
-        if len(data_bytes) > 200 * 1024 * 1024: return err(400, "Файл слишком большой (макс 200 МБ)")
+        if file_type.startswith("video/") and len(data_bytes) > 15 * 1024 * 1024: return err(400, "Видео не более 15 МБ. Сожмите файл или обрежьте длину.")
+        if not file_type.startswith("video/") and len(data_bytes) > 100 * 1024 * 1024: return err(400, "Файл слишком большой (макс 100 МБ)")
         ext = mimetypes.guess_extension(file_type) or ".bin"
         if ext == ".jpe": ext = ".jpg"
         if ext == ".mpga": ext = ".mp3"
