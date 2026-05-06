@@ -533,9 +533,9 @@ function CreatePostModal({ userInitials, onClose, onCreated }: { userInitials: s
       style={{ background: "rgba(10,15,30,0.7)", backdropFilter: "blur(4px)" }}
       onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
     >
-      <input ref={fileInputRef} type="file" accept="video/*,application/pdf,.doc,.docx" className="hidden" onChange={handleMediaSelect} />
+      <input ref={fileInputRef} type="file" accept="video/mp4,video/webm,video/ogg,video/quicktime,video/x-msvideo,video/*" className="hidden" onChange={handleMediaSelect} />
       <input ref={multiInputRef} type="file" accept="image/*" multiple className="hidden" onChange={handleMultiSelect} />
-      <div className="w-full max-w-lg rounded-xl p-6 section-enter" style={{ background: "hsl(0,0%,100%)", border: "1px solid hsl(216,20%,88%)" }}>
+      <div className="w-full max-w-lg rounded-xl p-5 sm:p-6 section-enter overflow-y-auto" style={{ background: "hsl(0,0%,100%)", border: "1px solid hsl(216,20%,88%)", maxHeight: "95vh" }}>
         <div className="flex items-center justify-between mb-4">
           <h2 className="font-semibold text-base">Новая публикация</h2>
           <button onClick={onClose} className="w-8 h-8 rounded-md flex items-center justify-center hover:bg-muted" style={{ color: "hsl(220,15%,55%)" }}>
@@ -1136,10 +1136,16 @@ function UserProfilePage({ userId, currentUser, onBack, onOpenChat, onOpenProfil
                           </div>
                         )}
                       </div>
-                      <div className="flex items-center gap-1.5 px-2 py-1.5 text-xs" style={{ color: "hsl(220,15%,55%)" }}>
+                      <div className="flex items-center gap-1.5 px-2 py-1.5 text-xs" style={{ color: "hsl(220,15%,45%)", background: "rgba(0,0,0,0.05)", borderTop: "1px solid rgba(0,0,0,0.07)" }}>
                         <button className="flex items-center justify-center w-6 h-6 rounded transition-colors"
-                          style={{ color: p.liked ? "hsl(0,72%,51%)" : "hsl(220,15%,55%)" }}
-                          onClick={async () => { const r = await apiPost(POSTS_URL, { action: "like", post_id: p.id }); if (r.ok) setPosts(prev => prev.map(pp => pp.id === p.id ? { ...pp, liked: r.data.liked as boolean, likes_count: r.data.likes_count as number } : pp)); }}>
+                          style={{ color: p.liked ? "hsl(0,72%,51%)" : "hsl(220,15%,45%)" }}
+                          onClick={async () => {
+                            if (!p.liked) {
+                              setPosts(prev => prev.map(pp => pp.id === p.id ? { ...pp, liked: true, likes_count: pp.likes_count + 1 } : pp));
+                            }
+                            const r = await apiPost(POSTS_URL, { action: "like", post_id: p.id });
+                            if (r.ok) setPosts(prev => prev.map(pp => pp.id === p.id ? { ...pp, liked: r.data.liked as boolean, likes_count: r.data.likes_count as number } : pp));
+                          }}>
                           <Icon name="Heart" size={12} style={{ fill: p.liked ? "currentColor" : "none" }} />
                         </button>
                         <button className="transition-colors hover:underline"
@@ -1171,7 +1177,11 @@ function UserProfilePage({ userId, currentUser, onBack, onOpenChat, onOpenProfil
                       <span>{timeAgo(p.created_at)}</span>
                       <button className="flex items-center gap-1 transition-colors"
                         style={{ color: p.liked ? "hsl(0,72%,51%)" : undefined }}
-                        onClick={async () => { const r = await apiPost(POSTS_URL, { action: "like", post_id: p.id }); if (r.ok) setPosts(prev => prev.map(pp => pp.id === p.id ? { ...pp, liked: r.data.liked as boolean, likes_count: r.data.likes_count as number } : pp)); }}>
+                        onClick={async () => {
+                          if (!p.liked) setPosts(prev => prev.map(pp => pp.id === p.id ? { ...pp, liked: true, likes_count: pp.likes_count + 1 } : pp));
+                          const r = await apiPost(POSTS_URL, { action: "like", post_id: p.id });
+                          if (r.ok) setPosts(prev => prev.map(pp => pp.id === p.id ? { ...pp, liked: r.data.liked as boolean, likes_count: r.data.likes_count as number } : pp));
+                        }}>
                         <Icon name="Heart" size={11} style={{ fill: p.liked ? "currentColor" : "none" }} />{p.likes_count > 0 ? p.likes_count : ""}
                       </button>
                       <span className="flex items-center gap-1"><Icon name="Eye" size={11} />{p.views_count}</span>
@@ -1217,7 +1227,7 @@ function UserProfilePage({ userId, currentUser, onBack, onOpenChat, onOpenProfil
 interface Group { id: number; name: string; description: string; avatar_url: string; members_count: number; owner_id: number; is_member: boolean; initials: string; }
 interface GroupPost { id: number; text: string; media_url: string; media_type: string; likes_count: number; comments_count: number; created_at: string; author: PostAuthor; liked: boolean; is_mine: boolean; }
 
-function GroupDetailPage({ group, currentUser, onBack }: { group: Group; currentUser: User | null; onBack: () => void }) {
+function GroupDetailPage({ group, currentUser, onBack, onOpenProfile }: { group: Group; currentUser: User | null; onBack: () => void; onOpenProfile?: (uid: number) => void }) {
   const [posts, setPosts] = useState<GroupPost[]>([]);
   const [members, setMembers] = useState<{ id: number; full_name: string; job_title: string; avatar_url: string; initials: string; role: string }[]>([]);
   const [tab, setTab] = useState<"posts" | "members">("posts");
@@ -1552,13 +1562,15 @@ function GroupDetailPage({ group, currentUser, onBack }: { group: Group; current
       {tab === "members" && (
         <div className="space-y-2">
           {members.map((m) => (
-            <div key={m.id} className="post-card flex items-center gap-3">
+            <div key={m.id} className="post-card flex items-center gap-3 cursor-pointer hover:shadow-md transition-shadow"
+              onClick={() => onOpenProfile?.(m.id)}>
               <Avatar initials={m.initials} avatarUrl={m.avatar_url} size="sm" />
               <div className="flex-1">
-                <div className="font-medium text-sm">{m.full_name}</div>
-                <div className="text-xs" style={{ color: "hsl(220,15%,55%)" }}>{m.job_title || m.role}</div>
+                <div className="font-medium text-sm" style={{ color: "hsl(213,80%,38%)" }}>{m.full_name}</div>
+                <div className="text-xs" style={{ color: "hsl(220,15%,55%)" }}>{m.job_title || "Участник"}</div>
               </div>
               {m.role === "owner" && <span className="text-xs px-2 py-0.5 rounded-full" style={{ background: "hsl(213,80%,94%)", color: "hsl(213,80%,40%)" }}>Владелец</span>}
+              <Icon name="ChevronRight" size={14} style={{ color: "hsl(220,15%,60%)" }} />
             </div>
           ))}
         </div>
@@ -1567,7 +1579,7 @@ function GroupDetailPage({ group, currentUser, onBack }: { group: Group; current
   );
 }
 
-function GroupsPage({ currentUser }: { currentUser: User | null }) {
+function GroupsPage({ currentUser, onOpenProfile }: { currentUser: User | null; onOpenProfile?: (uid: number) => void }) {
   const [groups, setGroups] = useState<Group[]>([]);
   const [loading, setLoading] = useState(true);
   const [query, setQuery] = useState("");
@@ -1598,7 +1610,7 @@ function GroupsPage({ currentUser }: { currentUser: User | null }) {
     if (r.ok && r.data.group) { setGroups((prev) => [r.data.group as Group, ...prev]); setShowCreate(false); setNewGroupName(""); setNewGroupDesc(""); }
   };
 
-  if (activeGroup) return <GroupDetailPage group={activeGroup} currentUser={currentUser} onBack={() => setActiveGroup(null)} />;
+  if (activeGroup) return <GroupDetailPage group={activeGroup} currentUser={currentUser} onBack={() => setActiveGroup(null)} onOpenProfile={onOpenProfile} />;
 
   return (
     <div className="max-w-2xl mx-auto px-4 py-5">
@@ -1683,6 +1695,8 @@ function PostCard({ post, onLike, onCommentAdded, onDelete, userInitials, userAv
   const [showLikes, setShowLikes] = useState(false);
   const [loadingLikes, setLoadingLikes] = useState(false);
   const [slideIdx, setSlideIdx] = useState(0);
+  const [localLiked, setLocalLiked] = useState(post.liked);
+  const [localLikesCount, setLocalLikesCount] = useState(post.likes_count);
   const photos = post.media_urls && post.media_urls.length > 1 ? post.media_urls : null;
 
   const toggleComments = async () => {
@@ -1841,15 +1855,23 @@ function PostCard({ post, onLike, onCommentAdded, onDelete, userInitials, userAv
         <span className="flex items-center gap-1"><Icon name="Eye" size={13} />{post.views_count.toLocaleString("ru")}</span>
         <div className="flex items-center gap-3">
           <div className="flex items-center gap-1">
-            <button className="flex items-center gap-1 transition-colors" onClick={() => onLike(post.id)} style={{ color: post.liked ? "hsl(0,72%,51%)" : "hsl(220,15%,55%)" }}>
-              <Icon name="Heart" size={14} style={{ fill: post.liked ? "currentColor" : "none" }} />
+            <button className="flex items-center gap-1 transition-colors"
+              style={{ color: localLiked ? "hsl(0,72%,51%)" : "hsl(220,15%,55%)" }}
+              onClick={() => {
+                if (!localLiked) {
+                  setLocalLiked(true);
+                  setLocalLikesCount(c => c + 1);
+                }
+                onLike(post.id);
+              }}>
+              <Icon name="Heart" size={14} style={{ fill: localLiked ? "currentColor" : "none" }} />
             </button>
             <button
               className="transition-colors hover:underline"
-              style={{ color: post.likes_count > 0 ? "hsl(0,72%,51%)" : "hsl(220,15%,55%)", minWidth: 12 }}
+              style={{ color: localLikesCount > 0 ? "hsl(0,72%,51%)" : "hsl(220,15%,55%)", minWidth: 12 }}
               onClick={handleShowLikes}
             >
-              {post.likes_count > 0 ? post.likes_count : ""}
+              {localLikesCount > 0 ? localLikesCount : ""}
             </button>
           </div>
           <button className="flex items-center gap-1.5 transition-colors hover:text-blue-600" onClick={toggleComments} style={{ color: showComments ? "hsl(213,80%,40%)" : "hsl(220,15%,55%)" }}>
@@ -3579,7 +3601,7 @@ export default function Index() {
         }}
         cache={cachedFriends} setCache={setCachedFriends}
         loaded={loadedTabs.has("friends")} onLoaded={() => markLoaded("friends")} />;
-      case "groups": return <GroupsPage currentUser={currentUser} />;
+      case "groups": return <GroupsPage currentUser={currentUser} onOpenProfile={openUserProfile} />;
       case "notifications": return <NotificationsPage onOpenProfile={openUserProfile}
         cache={cachedNotifs} setCache={setCachedNotifs}
         loaded={loadedTabs.has("notifications")} onLoaded={() => markLoaded("notifications")} />;
@@ -3726,7 +3748,7 @@ export default function Index() {
           ))}
         </div>
 
-        <div className="flex-1 overflow-y-auto pb-16 md:pb-0">
+        <div className="flex-1 overflow-y-auto pb-20 md:pb-0 overscroll-y-contain" style={{ WebkitOverflowScrolling: "touch" } as React.CSSProperties}>
           {viewingUserId ? (
             <UserProfilePage userId={viewingUserId} currentUser={currentUser}
               onBack={() => setViewingUserId(null)}
