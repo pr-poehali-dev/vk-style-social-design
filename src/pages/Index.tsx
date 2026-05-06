@@ -238,7 +238,7 @@ function AuthScreen({ onAuth }: { onAuth: (user: User, token: string) => void })
       const r = await apiAuth("reset_password_request", { email });
       setLoading(false);
       if (!r.ok) { setError(r.data?.error as string || "Ошибка"); return; }
-      setSuccess(`Код отправлен. Ваш код: ${r.data?.code}`);
+      setSuccess(r.data?.message as string || `Код отправлен на ${email}`);
       setMode("reset_confirm");
       return;
     }
@@ -707,23 +707,25 @@ function ShareModal({ postId, text, onClose }: { postId: number; text: string; o
 }
 
 // ─── UsersListModal ───────────────────────────────────────────────────────────
-function UsersListModal({ title, users, onClose, onFollowToggle, onOpenProfile, onStartChat }: {
+function UsersListModal({ title, users, onClose, onFollowToggle, onOpenProfile, onStartChat, loading }: {
   title: string;
   users: { id: number; full_name: string; job_title: string; avatar_url: string; initials: string; is_following?: boolean }[];
   onClose: () => void;
   onFollowToggle?: (uid: number, following: boolean) => void;
   onOpenProfile?: (uid: number) => void;
   onStartChat?: (uid: number) => void;
+  loading?: boolean;
 }) {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: "rgba(0,0,0,0.6)" }} onClick={onClose}>
       <div className="w-full max-w-sm rounded-xl" style={{ background: "white", border: "1px solid hsl(216,20%,88%)", maxHeight: "70vh", display: "flex", flexDirection: "column" }} onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center justify-between px-4 py-3 border-b" style={{ borderColor: "hsl(216,20%,88%)" }}>
-          <h3 className="font-semibold text-sm">{title} · {users.length}</h3>
+          <h3 className="font-semibold text-sm">{title}{!loading && users.length > 0 ? ` · ${users.length}` : ""}</h3>
           <button onClick={onClose}><Icon name="X" size={16} style={{ color: "hsl(220,15%,55%)" }} /></button>
         </div>
         <div className="overflow-y-auto flex-1">
-          {users.length === 0 && <div className="text-center py-10 text-sm" style={{ color: "hsl(220,15%,55%)" }}>Пока никого нет</div>}
+          {loading && <div className="flex justify-center py-10"><Icon name="Loader" size={20} className="animate-spin" style={{ color: "hsl(220,15%,55%)" }} /></div>}
+          {!loading && users.length === 0 && <div className="text-center py-10 text-sm" style={{ color: "hsl(220,15%,55%)" }}>Пока никого нет</div>}
           {users.map((u) => (
             <div key={u.id} className="flex items-center gap-3 px-4 py-3 border-b cursor-pointer hover:bg-gray-50 transition-colors"
               style={{ borderColor: "hsl(216,20%,94%)" }}
@@ -1015,24 +1017,38 @@ function UserProfilePage({ userId, currentUser, onBack, onOpenChat, onOpenProfil
           {mediaOnly.length > 0 && (
             <>
               <div className="text-xs font-medium mb-2" style={{ color: "hsl(220,15%,50%)" }}>Фото и видео</div>
-              <div className="grid grid-cols-3 gap-1 mb-4">
-                {mediaOnly.map((p) => (
-                  <div key={p.id} className="relative aspect-square rounded-lg overflow-hidden bg-gray-100 cursor-pointer"
-                    onClick={() => setMediaViewer({ url: p.media_url!, type: p.media_type || "image" })}>
-                    {p.media_type === "image"
-                      ? <img src={p.media_url} alt="" className="w-full h-full object-cover" />
-                      : <div className="w-full h-full flex items-center justify-center" style={{ background: "hsl(221,25%,18%)" }}>
-                          <Icon name="Play" size={24} style={{ color: "white" }} />
-                        </div>}
-                    {p.media_type === "video" && (
-                      <span className="absolute top-1 right-1"><Icon name="Video" size={12} style={{ color: "white" }} /></span>
-                    )}
-                    <div className="absolute bottom-0 left-0 right-0 flex items-center gap-2 px-2 py-1" style={{ background: "rgba(0,0,0,0.4)", color: "white", fontSize: "10px" }}>
-                      <Icon name="Heart" size={10} />{p.likes_count}
-                      <Icon name="Eye" size={10} />{p.views_count}
+              <div className="grid grid-cols-3 gap-1.5 mb-4">
+                {mediaOnly.map((p) => {
+                  const thumbUrl = p.media_urls && p.media_urls.length > 0 ? p.media_urls[0] : p.media_url;
+                  const hasMany = p.media_urls && p.media_urls.length > 1;
+                  return (
+                    <div key={p.id} className="rounded-xl overflow-hidden" style={{ background: "hsl(220,20%,96%)" }}>
+                      <div className="relative aspect-square cursor-pointer group"
+                        onClick={() => setMediaViewer({ url: thumbUrl!, type: p.media_type || "image" })}>
+                        {p.media_type === "image"
+                          ? <img src={thumbUrl} alt="" className="w-full h-full object-cover" />
+                          : <div className="w-full h-full flex items-center justify-center" style={{ background: "hsl(221,25%,18%)" }}>
+                              <Icon name="Play" size={24} style={{ color: "white" }} />
+                            </div>}
+                        {hasMany && (
+                          <div className="absolute top-1 right-1 px-1.5 py-0.5 rounded-full text-white flex items-center gap-0.5" style={{ background: "rgba(0,0,0,0.55)", fontSize: 10 }}>
+                            <Icon name="Images" size={9} />{p.media_urls!.length}
+                          </div>
+                        )}
+                        {p.media_type === "video" && <span className="absolute top-1 left-1"><Icon name="Video" size={12} style={{ color: "white" }} /></span>}
+                        <div className="absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center" style={{ background: "rgba(0,0,0,0.18)" }}>
+                          <Icon name="Maximize2" size={18} style={{ color: "white" }} />
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-3 px-2 py-1.5 text-xs" style={{ color: "hsl(220,15%,55%)" }}>
+                        <span className="flex items-center gap-1" style={{ color: p.liked ? "hsl(0,72%,51%)" : undefined }}>
+                          <Icon name="Heart" size={11} style={{ fill: p.liked ? "currentColor" : "none" }} />{p.likes_count > 0 ? p.likes_count : ""}
+                        </span>
+                        <span className="flex items-center gap-1"><Icon name="Eye" size={11} />{p.views_count}</span>
+                      </div>
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             </>
           )}
@@ -1543,10 +1559,11 @@ function PostCard({ post, onLike, onCommentAdded, onDelete, userInitials, userAv
 
   const handleShowLikes = async () => {
     if (post.likes_count === 0) return;
+    setLikesUsers([]);
     setLoadingLikes(true);
     setShowLikes(true);
     const r = await apiPost(POSTS_URL, { action: "get_likes_users", post_id: post.id });
-    setLikesUsers((r.data.users as typeof likesUsers) || []);
+    setLikesUsers((r.data?.users as typeof likesUsers) || []);
     setLoadingLikes(false);
   };
 
@@ -1563,7 +1580,7 @@ function PostCard({ post, onLike, onCommentAdded, onDelete, userInitials, userAv
       {mediaViewer && <MediaViewer url={mediaViewer.url} type={mediaViewer.type} onClose={() => setMediaViewer(null)} />}
       {showShare && <ShareModal postId={post.id} text={post.text} onClose={() => { setShowShare(false); setShareCount(c => c + 1); }} />}
       {showLikes && (
-        <UsersListModal title="Лайки" users={loadingLikes ? [] : likesUsers} onClose={() => setShowLikes(false)} />
+        <UsersListModal title="Лайкнули" users={likesUsers} loading={loadingLikes} onClose={() => setShowLikes(false)} />
       )}
 
       <div className="flex items-start gap-3">
@@ -1665,10 +1682,18 @@ function PostCard({ post, onLike, onCommentAdded, onDelete, userInitials, userAv
       <div className="flex items-center justify-between mt-4 pt-3 border-t text-xs" style={{ borderColor: "hsl(216,20%,90%)", color: "hsl(220,15%,55%)" }}>
         <span className="flex items-center gap-1"><Icon name="Eye" size={13} />{post.views_count.toLocaleString("ru")}</span>
         <div className="flex items-center gap-3">
-          <button className="flex items-center gap-1.5 transition-colors" onClick={() => onLike(post.id)} style={{ color: post.liked ? "hsl(0,72%,51%)" : "hsl(220,15%,55%)" }}>
-            <Icon name="Heart" size={14} />
-            <span className={post.likes_count > 0 ? "cursor-pointer hover:underline" : ""} onClick={(e) => { e.stopPropagation(); handleShowLikes(); }}>{post.likes_count}</span>
-          </button>
+          <div className="flex items-center gap-1">
+            <button className="flex items-center gap-1 transition-colors" onClick={() => onLike(post.id)} style={{ color: post.liked ? "hsl(0,72%,51%)" : "hsl(220,15%,55%)" }}>
+              <Icon name="Heart" size={14} style={{ fill: post.liked ? "currentColor" : "none" }} />
+            </button>
+            <button
+              className="transition-colors hover:underline"
+              style={{ color: post.likes_count > 0 ? "hsl(0,72%,51%)" : "hsl(220,15%,55%)", minWidth: 12 }}
+              onClick={handleShowLikes}
+            >
+              {post.likes_count > 0 ? post.likes_count : ""}
+            </button>
+          </div>
           <button className="flex items-center gap-1.5 transition-colors hover:text-blue-600" onClick={toggleComments} style={{ color: showComments ? "hsl(213,80%,40%)" : "hsl(220,15%,55%)" }}>
             <Icon name="MessageCircle" size={14} />{post.comments_count}
           </button>
@@ -2438,7 +2463,7 @@ function EditProfileModal({
     if (typeof json === "string") { try { json = JSON.parse(json as string); } catch { /* ignore */ } }
     setLoading(false);
     if (!r1.ok) { setError((json.error as string) || "Ошибка сохранения"); return; }
-    const updated = { ...(json as unknown as User), social_vk: socialVk, social_tg: socialTg, social_linkedin: socialLi, social_instagram: socialIg };
+    const updated = { ...(json as unknown as User), avatar_url: user.avatar_url, cover_url: user.cover_url, social_vk: socialVk, social_tg: socialTg, social_linkedin: socialLi, social_instagram: socialIg };
     localStorage.setItem("nexus_user", JSON.stringify(updated));
     onSave(updated);
     if (r2.ok) onClose();
@@ -2818,24 +2843,40 @@ function ProfilePage({ user, onUserUpdate, onOpenProfile, onStartChat, isAdmin }
           {mediaOnly.length > 0 && (
             <>
               <div className="text-xs font-medium mb-2" style={{ color: "hsl(220,15%,50%)" }}>Фото и видео</div>
-              <div className="grid grid-cols-3 gap-1 mb-4">
-                {mediaOnly.map((p) => (
-                  <div key={p.id} className="relative aspect-square rounded-lg overflow-hidden bg-gray-100 cursor-pointer"
-                    onClick={() => setMediaViewer({ url: p.media_url!, type: p.media_type || "image" })}>
-                    {p.media_type === "image"
-                      ? <img src={p.media_url} alt="" className="w-full h-full object-cover" />
-                      : <div className="w-full h-full flex items-center justify-center" style={{ background: "hsl(221,25%,18%)" }}>
-                          <Icon name="Play" size={24} style={{ color: "white" }} />
-                        </div>}
-                    {p.media_type === "video" && (
-                      <span className="absolute top-1 right-1"><Icon name="Video" size={12} style={{ color: "white" }} /></span>
-                    )}
-                    <div className="absolute bottom-0 left-0 right-0 flex items-center gap-2 px-2 py-1" style={{ background: "rgba(0,0,0,0.4)", color: "white", fontSize: "10px" }}>
-                      <Icon name="Heart" size={10} />{p.likes_count}
-                      <Icon name="Eye" size={10} />{p.views_count}
+              <div className="grid grid-cols-3 gap-1.5 mb-4">
+                {mediaOnly.map((p) => {
+                  const thumbUrl = p.media_urls && p.media_urls.length > 0 ? p.media_urls[0] : p.media_url;
+                  const hasMany = p.media_urls && p.media_urls.length > 1;
+                  return (
+                    <div key={p.id} className="rounded-xl overflow-hidden" style={{ background: "hsl(220,20%,96%)" }}>
+                      <div className="relative aspect-square cursor-pointer group"
+                        onClick={() => setMediaViewer({ url: thumbUrl!, type: p.media_type || "image" })}>
+                        {p.media_type === "image"
+                          ? <img src={thumbUrl} alt="" className="w-full h-full object-cover" />
+                          : <div className="w-full h-full flex items-center justify-center" style={{ background: "hsl(221,25%,18%)" }}>
+                              <Icon name="Play" size={24} style={{ color: "white" }} />
+                            </div>}
+                        {hasMany && (
+                          <div className="absolute top-1 right-1 px-1.5 py-0.5 rounded-full text-white flex items-center gap-0.5" style={{ background: "rgba(0,0,0,0.55)", fontSize: 10 }}>
+                            <Icon name="Images" size={9} />{p.media_urls!.length}
+                          </div>
+                        )}
+                        {p.media_type === "video" && <span className="absolute top-1 left-1"><Icon name="Video" size={12} style={{ color: "white" }} /></span>}
+                        <div className="absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center" style={{ background: "rgba(0,0,0,0.18)" }}>
+                          <Icon name="Maximize2" size={18} style={{ color: "white" }} />
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-3 px-2 py-1.5 text-xs" style={{ color: "hsl(220,15%,55%)" }}>
+                        <button className="flex items-center gap-1 transition-colors"
+                          style={{ color: p.liked ? "hsl(0,72%,51%)" : undefined }}
+                          onClick={async () => { const r = await apiPost(POSTS_URL, { action: "like", post_id: p.id }); if (r.ok) setUserPosts(prev => prev.map(pp => pp.id === p.id ? { ...pp, liked: r.data.liked as boolean, likes_count: r.data.likes_count as number } : pp)); }}>
+                          <Icon name="Heart" size={11} style={{ fill: p.liked ? "currentColor" : "none" }} />{p.likes_count > 0 ? p.likes_count : ""}
+                        </button>
+                        <span className="flex items-center gap-1"><Icon name="Eye" size={11} />{p.views_count}</span>
+                      </div>
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             </>
           )}

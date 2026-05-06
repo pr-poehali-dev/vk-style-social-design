@@ -481,24 +481,25 @@ def handler(event: dict, context) -> dict:
         if "," in file_data: file_data = file_data.split(",", 1)[1]
         try: data_bytes = base64.b64decode(file_data)
         except Exception: return err(400, "Ошибка декодирования")
-        if file_type.startswith("video/") and len(data_bytes) > 200 * 1024 * 1024: return err(400, "Видео не более 200 МБ.")
+        if file_type.startswith("video/") and len(data_bytes) > 8 * 1024 * 1024 * 1024: return err(400, "Видео не более 8 ГБ.")
         if not file_type.startswith("video/") and len(data_bytes) > 100 * 1024 * 1024: return err(400, "Файл слишком большой (макс 100 МБ)")
         ext = mimetypes.guess_extension(file_type) or ".bin"
         if ext == ".jpe": ext = ".jpg"
         if ext == ".mpga": ext = ".mp3"
         if not ext or ext == ".None": ext = ".bin"
-        # Сжатие изображений для ускорения
+        # Сжатие + авто-поворот изображений (EXIF orientation)
         if file_type.startswith("image/") and file_type != "image/gif":
             try:
-                from PIL import Image
+                from PIL import Image, ImageOps
                 img = Image.open(io.BytesIO(data_bytes))
+                img = ImageOps.exif_transpose(img)  # Исправляем поворот по EXIF
                 if img.mode not in ("RGB", "RGBA"): img = img.convert("RGB")
                 max_size = 1920
                 if img.width > max_size or img.height > max_size:
                     img.thumbnail((max_size, max_size), Image.LANCZOS)
                 buf = io.BytesIO()
                 save_fmt = "JPEG" if file_type != "image/png" else "PNG"
-                img.save(buf, format=save_fmt, quality=82, optimize=True)
+                img.save(buf, format=save_fmt, quality=85, optimize=True)
                 data_bytes = buf.getvalue()
                 file_type = "image/jpeg" if save_fmt == "JPEG" else "image/png"
                 ext = ".jpg" if save_fmt == "JPEG" else ".png"
@@ -532,13 +533,14 @@ def handler(event: dict, context) -> dict:
             if len(data_bytes) > 100 * 1024 * 1024: return err(400, "Файл слишком большой")
             ext = ".jpg"
             try:
-                from PIL import Image
+                from PIL import Image, ImageOps
                 img = Image.open(io.BytesIO(data_bytes))
+                img = ImageOps.exif_transpose(img)
                 if img.mode not in ("RGB", "RGBA"): img = img.convert("RGB")
                 if img.width > 1920 or img.height > 1920:
                     img.thumbnail((1920, 1920), Image.LANCZOS)
                 buf = io.BytesIO()
-                img.save(buf, format="JPEG", quality=82, optimize=True)
+                img.save(buf, format="JPEG", quality=85, optimize=True)
                 data_bytes = buf.getvalue()
                 ft = "image/jpeg"
             except Exception: pass
@@ -556,10 +558,20 @@ def handler(event: dict, context) -> dict:
         if "," in file_data: file_data = file_data.split(",", 1)[1]
         try: data_bytes = base64.b64decode(file_data)
         except Exception: return err(400, "Ошибка декодирования")
-        if len(data_bytes) > 10 * 1024 * 1024: return err(400, "Обложка не более 10 МБ")
-        ext = mimetypes.guess_extension(file_type) or ".jpg"
-        if ext == ".jpe": ext = ".jpg"
-        key = f"nexus/covers/{uuid.uuid4().hex}{ext}"
+        if len(data_bytes) > 30 * 1024 * 1024: return err(400, "Обложка не более 30 МБ")
+        ext = ".jpg"
+        try:
+            from PIL import Image, ImageOps
+            img = Image.open(io.BytesIO(data_bytes))
+            img = ImageOps.exif_transpose(img)
+            if img.mode not in ("RGB", "RGBA"): img = img.convert("RGB")
+            img.thumbnail((2560, 1440), Image.LANCZOS)
+            buf = io.BytesIO()
+            img.save(buf, format="JPEG", quality=85, optimize=True)
+            data_bytes = buf.getvalue()
+            file_type = "image/jpeg"
+        except Exception: pass
+        key = f"clanse/covers/{uuid.uuid4().hex}{ext}"
         s3 = get_s3()
         s3.put_object(Bucket=BUCKET, Key=key, Body=data_bytes, ContentType=file_type)
         url = f"{cdn_base}/{key}"
@@ -605,10 +617,20 @@ def handler(event: dict, context) -> dict:
         if "," in file_data: file_data = file_data.split(",", 1)[1]
         try: data_bytes = base64.b64decode(file_data)
         except Exception: return err(400, "Ошибка декодирования")
-        if len(data_bytes) > 5 * 1024 * 1024: return err(400, "Аватар не более 5 МБ")
-        ext = mimetypes.guess_extension(file_type) or ".jpg"
-        if ext == ".jpe": ext = ".jpg"
-        key = f"nexus/avatars/{uuid.uuid4().hex}{ext}"
+        if len(data_bytes) > 20 * 1024 * 1024: return err(400, "Аватар не более 20 МБ")
+        ext = ".jpg"
+        try:
+            from PIL import Image, ImageOps
+            img = Image.open(io.BytesIO(data_bytes))
+            img = ImageOps.exif_transpose(img)
+            if img.mode not in ("RGB", "RGBA"): img = img.convert("RGB")
+            img.thumbnail((800, 800), Image.LANCZOS)
+            buf = io.BytesIO()
+            img.save(buf, format="JPEG", quality=88, optimize=True)
+            data_bytes = buf.getvalue()
+            file_type = "image/jpeg"
+        except Exception: pass
+        key = f"clanse/avatars/{uuid.uuid4().hex}{ext}"
         s3 = get_s3()
         s3.put_object(Bucket=BUCKET, Key=key, Body=data_bytes, ContentType=file_type)
         url = f"{cdn_base}/{key}"
