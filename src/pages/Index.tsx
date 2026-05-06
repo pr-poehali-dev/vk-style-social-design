@@ -1671,10 +1671,13 @@ function FriendsPage({ onOpenProfile, onStartChat, cache, setCache, loaded, onLo
   const setUsers = (fn: SocialUser[] | ((prev: SocialUser[]) => SocialUser[])) => {
     setUsersLocal((prev) => {
       const next = typeof fn === "function" ? fn(prev) : fn;
-      setCache(next);
       return next;
     });
   };
+
+  useEffect(() => {
+    setCache(users);
+  }, [users]);
 
   useEffect(() => {
     if (loaded) return;
@@ -2033,114 +2036,7 @@ function MessagesPage({ currentUser }: { currentUser: User | null }) {
     }
   };
 
-  const ConvList = () => (
-    <div className="flex-1 overflow-y-auto">
-      {loadingConvs && [1,2,3].map((i) => <div key={i} className="h-16 mx-3 my-1 rounded-lg shimmer" />)}
-      {!loadingConvs && convs.length === 0 && (
-        <div className="text-center py-10 px-4" style={{ color: "hsl(220,15%,55%)" }}>
-          <Icon name="MessageSquare" size={28} className="mx-auto mb-2 opacity-30" />
-          <div className="text-xs">Найдите людей в Поиске и начните диалог</div>
-        </div>
-      )}
-      {convs.map((conv) => (
-        <div key={conv.id}
-          className={`w-full px-3 py-3 flex items-center gap-3 text-left transition-colors border-b group ${activeConv?.id === conv.id ? "bg-blue-50" : "hover:bg-gray-50"}`}
-          style={{ borderColor: "hsl(216,20%,93%)", cursor: "pointer" }}
-          onClick={() => openConv(conv)}>
-          <Avatar initials={conv.partner.initials} avatarUrl={conv.partner.avatar_url} size="sm" />
-          <div className="flex-1 min-w-0">
-            <div className="flex items-center justify-between">
-              <span className="font-medium text-xs">{conv.partner.full_name}</span>
-              <span className="text-xs" style={{ color: "hsl(220,15%,60%)" }}>{timeAgo(conv.last_at)}</span>
-            </div>
-            <div className="text-xs truncate mt-0.5" style={{ color: "hsl(220,15%,55%)" }}>{conv.last_message}</div>
-          </div>
-          <button className="opacity-0 group-hover:opacity-100 p-1 rounded hover:bg-red-50 flex-shrink-0 transition-all"
-            style={{ color: "hsl(0,72%,50%)" }}
-            onClick={(e) => deleteConv(conv.id, e)}
-            title="Удалить диалог">
-            <Icon name="Trash2" size={13} />
-          </button>
-        </div>
-      ))}
-    </div>
-  );
 
-  const ChatWindow = () => (
-    activeConv ? (
-      <div className="flex flex-col min-w-0 h-full" style={{ flex: 1 }}>
-        {mediaViewer && <MediaViewer url={mediaViewer.url} type={mediaViewer.type} onClose={() => setMediaViewer(null)} />}
-        <div className="px-4 py-3 border-b flex items-center gap-3 bg-card flex-shrink-0" style={{ borderColor: "hsl(216,20%,88%)" }}>
-          <button className="md:hidden p-1 rounded" style={{ color: "hsl(213,80%,40%)" }} onClick={() => setShowMobileChat(false)}>
-            <Icon name="ArrowLeft" size={18} />
-          </button>
-          <Avatar initials={activeConv.partner.initials} avatarUrl={activeConv.partner.avatar_url} size="sm" />
-          <div>
-            <div className="font-semibold text-sm">{activeConv.partner.full_name}</div>
-            <div className="text-xs" style={{ color: "hsl(220,15%,55%)" }}>{activeConv.partner.job_title}</div>
-          </div>
-        </div>
-
-        <div className="flex-1 overflow-y-auto px-3 py-4 space-y-2" style={{ background: "hsl(216,20%,97%)" }}>
-          {loadingMsgs && <div className="text-center text-xs py-4" style={{ color: "hsl(220,15%,60%)" }}>Загрузка...</div>}
-          {messages.map((msg) => (
-            <div key={msg.id} className={`flex items-end gap-2 ${msg.is_me ? "justify-end" : "justify-start"}`}>
-              {!msg.is_me && <Avatar initials={msg.sender_initials} avatarUrl={msg.sender_avatar} size="sm" />}
-              <div className={`max-w-xs md:max-w-sm ${msg.is_me ? "message-bubble-me" : "message-bubble-other"}`}>
-                {msg.media_url && msg.media_type === "image" && (
-                  <img src={msg.media_url} alt="media" className="rounded-lg max-w-full max-h-52 object-cover mb-1 cursor-pointer" onClick={() => setMediaViewer({ url: msg.media_url, type: "image" })} />
-                )}
-                {msg.media_url && msg.media_type === "video" && (
-                  <video src={msg.media_url} controls className="rounded-lg max-w-full max-h-52 mb-1" />
-                )}
-                {msg.media_url && msg.media_type === "document" && (
-                  <a href={msg.media_url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-2 px-3 py-2 rounded-lg mb-1" style={{ background: "rgba(255,255,255,0.2)" }}>
-                    <Icon name="FileText" size={16} />
-                    <span className="text-xs truncate">Документ</span>
-                  </a>
-                )}
-                {msg.text && <p className="px-4 py-2.5 text-sm break-words">{msg.text}</p>}
-                {!msg.text && msg.media_url && <div className="px-4 pb-1" />}
-                <div className="text-xs px-4 pb-2 text-right opacity-70">{timeAgo(msg.created_at)}</div>
-              </div>
-              {msg.is_me && <Avatar initials={myInitials} avatarUrl={currentUser?.avatar_url} size="sm" />}
-            </div>
-          ))}
-          <div ref={messagesEndRef} />
-        </div>
-
-        <div className="px-3 py-2.5 border-t bg-card flex items-center gap-2 flex-shrink-0" style={{ borderColor: "hsl(216,20%,88%)" }}>
-          <div className="flex gap-1">
-            <button className="p-2 rounded-lg hover:bg-muted" onClick={() => fileRef.current?.click()} disabled={sendingMedia} title="Фото/Видео" style={{ color: "hsl(220,15%,50%)" }}>
-              {sendingMedia ? <Icon name="Loader" size={16} className="animate-spin" /> : <Icon name="Image" size={16} />}
-            </button>
-            <button className="p-2 rounded-lg hover:bg-muted" onClick={() => docRef.current?.click()} disabled={sendingMedia} title="Документ" style={{ color: "hsl(220,15%,50%)" }}>
-              <Icon name="Paperclip" size={16} />
-            </button>
-          </div>
-          <input
-            className="flex-1 px-4 py-2 rounded-full border text-sm outline-none focus:border-blue-400"
-            style={{ borderColor: "hsl(216,20%,85%)", color: "hsl(220,30%,15%)" }}
-            placeholder="Написать сообщение..."
-            value={newMsg}
-            onChange={(e) => setNewMsg(e.target.value)}
-            onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendMessage(); } }}
-          />
-          <button className="btn-primary px-3 py-2 rounded-full flex-shrink-0" onClick={() => sendMessage()} disabled={!newMsg.trim()}>
-            <Icon name="Send" size={15} />
-          </button>
-        </div>
-      </div>
-    ) : (
-      <div className="flex-1 hidden md:flex items-center justify-center" style={{ color: "hsl(220,15%,60%)" }}>
-        <div className="text-center">
-          <Icon name="MessageSquare" size={40} className="mx-auto mb-3 opacity-30" />
-          <div className="text-sm font-medium mb-1">Выберите диалог</div>
-          <div className="text-xs">Или найдите человека через Поиск</div>
-        </div>
-      </div>
-    )
-  );
 
   return (
     <div className="flex" style={{ height: "calc(100vh - 3rem)" }}>
@@ -2155,13 +2051,114 @@ function MessagesPage({ currentUser }: { currentUser: User | null }) {
             <input className="w-full pl-8 pr-3 py-2 rounded-md border text-xs outline-none bg-card" style={{ borderColor: "hsl(216,20%,87%)", color: "hsl(220,30%,20%)" }} placeholder="Поиск диалогов..." />
           </div>
         </div>
-        <ConvList />
+        <div className="flex-1 overflow-y-auto">
+          {loadingConvs && [1,2,3].map((i) => <div key={i} className="h-16 mx-3 my-1 rounded-lg shimmer" />)}
+          {!loadingConvs && convs.length === 0 && (
+            <div className="text-center py-10 px-4" style={{ color: "hsl(220,15%,55%)" }}>
+              <Icon name="MessageSquare" size={28} className="mx-auto mb-2 opacity-30" />
+              <div className="text-xs">Найдите людей в Поиске и начните диалог</div>
+            </div>
+          )}
+          {convs.map((conv) => (
+            <div key={conv.id}
+              className={`w-full px-3 py-3 flex items-center gap-3 text-left transition-colors border-b group ${activeConv?.id === conv.id ? "bg-blue-50" : "hover:bg-gray-50"}`}
+              style={{ borderColor: "hsl(216,20%,93%)", cursor: "pointer" }}
+              onClick={() => openConv(conv)}>
+              <Avatar initials={conv.partner.initials} avatarUrl={conv.partner.avatar_url} size="sm" />
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center justify-between">
+                  <span className="font-medium text-xs">{conv.partner.full_name}</span>
+                  <span className="text-xs" style={{ color: "hsl(220,15%,60%)" }}>{timeAgo(conv.last_at)}</span>
+                </div>
+                <div className="text-xs truncate mt-0.5" style={{ color: "hsl(220,15%,55%)" }}>{conv.last_message}</div>
+              </div>
+              <button className="opacity-0 group-hover:opacity-100 p-1 rounded hover:bg-red-50 flex-shrink-0 transition-all"
+                style={{ color: "hsl(0,72%,50%)" }}
+                onClick={(e) => deleteConv(conv.id, e)}
+                title="Удалить диалог">
+                <Icon name="Trash2" size={13} />
+              </button>
+            </div>
+          ))}
+        </div>
       </div>
 
       {/* Чат — полный экран на мобилке */}
       <div className={`flex-1 min-w-0 ${showMobileChat ? "flex flex-col fixed inset-0 z-40 bg-white md:static md:z-auto" : "hidden md:flex md:flex-col"}`}
         style={showMobileChat ? { paddingBottom: "env(safe-area-inset-bottom, 0px)" } : {}}>
-        <ChatWindow />
+        {activeConv ? (
+          <div className="flex flex-col min-w-0 h-full" style={{ flex: 1 }}>
+            {mediaViewer && <MediaViewer url={mediaViewer.url} type={mediaViewer.type} onClose={() => setMediaViewer(null)} />}
+            <div className="px-4 py-3 border-b flex items-center gap-3 bg-card flex-shrink-0" style={{ borderColor: "hsl(216,20%,88%)" }}>
+              <button className="md:hidden p-1 rounded" style={{ color: "hsl(213,80%,40%)" }} onClick={() => setShowMobileChat(false)}>
+                <Icon name="ArrowLeft" size={18} />
+              </button>
+              <Avatar initials={activeConv.partner.initials} avatarUrl={activeConv.partner.avatar_url} size="sm" />
+              <div>
+                <div className="font-semibold text-sm">{activeConv.partner.full_name}</div>
+                <div className="text-xs" style={{ color: "hsl(220,15%,55%)" }}>{activeConv.partner.job_title}</div>
+              </div>
+            </div>
+
+            <div className="flex-1 overflow-y-auto px-3 py-4 space-y-2" style={{ background: "hsl(216,20%,97%)" }}>
+              {loadingMsgs && <div className="text-center text-xs py-4" style={{ color: "hsl(220,15%,60%)" }}>Загрузка...</div>}
+              {messages.map((msg) => (
+                <div key={msg.id} className={`flex items-end gap-2 ${msg.is_me ? "justify-end" : "justify-start"}`}>
+                  {!msg.is_me && <Avatar initials={msg.sender_initials} avatarUrl={msg.sender_avatar} size="sm" />}
+                  <div className={`max-w-xs md:max-w-sm ${msg.is_me ? "message-bubble-me" : "message-bubble-other"}`}>
+                    {msg.media_url && msg.media_type === "image" && (
+                      <img src={msg.media_url} alt="media" className="rounded-lg max-w-full max-h-52 object-cover mb-1 cursor-pointer" onClick={() => setMediaViewer({ url: msg.media_url, type: "image" })} />
+                    )}
+                    {msg.media_url && msg.media_type === "video" && (
+                      <video src={msg.media_url} controls className="rounded-lg max-w-full max-h-52 mb-1" />
+                    )}
+                    {msg.media_url && msg.media_type === "document" && (
+                      <a href={msg.media_url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-2 px-3 py-2 rounded-lg mb-1" style={{ background: "rgba(255,255,255,0.2)" }}>
+                        <Icon name="FileText" size={16} />
+                        <span className="text-xs truncate">Документ</span>
+                      </a>
+                    )}
+                    {msg.text && <p className="px-4 py-2.5 text-sm break-words">{msg.text}</p>}
+                    {!msg.text && msg.media_url && <div className="px-4 pb-1" />}
+                    <div className="text-xs px-4 pb-2 text-right opacity-70">{timeAgo(msg.created_at)}</div>
+                  </div>
+                  {msg.is_me && <Avatar initials={myInitials} avatarUrl={currentUser?.avatar_url} size="sm" />}
+                </div>
+              ))}
+              <div ref={messagesEndRef} />
+            </div>
+
+            <div className="px-3 py-2.5 border-t bg-card flex items-center gap-2 flex-shrink-0" style={{ borderColor: "hsl(216,20%,88%)" }}>
+              <div className="flex gap-1">
+                <button className="p-2 rounded-lg hover:bg-muted" onClick={() => fileRef.current?.click()} disabled={sendingMedia} title="Фото/Видео" style={{ color: "hsl(220,15%,50%)" }}>
+                  {sendingMedia ? <Icon name="Loader" size={16} className="animate-spin" /> : <Icon name="Image" size={16} />}
+                </button>
+                <button className="p-2 rounded-lg hover:bg-muted" onClick={() => docRef.current?.click()} disabled={sendingMedia} title="Документ" style={{ color: "hsl(220,15%,50%)" }}>
+                  <Icon name="Paperclip" size={16} />
+                </button>
+              </div>
+              <input
+                className="flex-1 px-4 py-2 rounded-full border text-sm outline-none focus:border-blue-400"
+                style={{ borderColor: "hsl(216,20%,85%)", color: "hsl(220,30%,15%)" }}
+                placeholder="Написать сообщение..."
+                value={newMsg}
+                onChange={(e) => setNewMsg(e.target.value)}
+                onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendMessage(); } }}
+              />
+              <button className="btn-primary px-3 py-2 rounded-full flex-shrink-0" onClick={() => sendMessage()} disabled={!newMsg.trim()}>
+                <Icon name="Send" size={15} />
+              </button>
+            </div>
+          </div>
+        ) : (
+          <div className="flex-1 hidden md:flex items-center justify-center" style={{ color: "hsl(220,15%,60%)" }}>
+            <div className="text-center">
+              <Icon name="MessageSquare" size={40} className="mx-auto mb-3 opacity-30" />
+              <div className="text-sm font-medium mb-1">Выберите диалог</div>
+              <div className="text-xs">Или найдите человека через Поиск</div>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );
