@@ -16,8 +16,6 @@ function fetchWithTimeout(input: RequestInfo, init?: RequestInit, timeoutMs = TI
   return fetch(input, { ...init, signal: controller.signal }).finally(() => clearTimeout(id));
 }
 
-const networkEvents = new EventTarget();
-
 async function apiPost(url: string, body: Record<string, unknown>, isUpload = false) {
   try {
     const res = await fetchWithTimeout(url, {
@@ -29,10 +27,8 @@ async function apiPost(url: string, body: Record<string, unknown>, isUpload = fa
     let json: Record<string, unknown> = {};
     try { json = JSON.parse(text); } catch { /* ignore */ }
     if (typeof json === "string") { try { json = JSON.parse(json as string); } catch { /* ignore */ } }
-    networkEvents.dispatchEvent(new Event("online"));
     return { ok: res.ok, data: json };
   } catch {
-    networkEvents.dispatchEvent(new Event("offline"));
     return { ok: false, data: { error: "Нет соединения с сервером" } };
   }
 }
@@ -2815,7 +2811,6 @@ export default function Index() {
   const [unreadCount, setUnreadCount] = useState(0);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [isAdmin, setIsAdmin] = useState(false);
-  const [offline, setOffline] = useState(false);
   const [viewingUserId, setViewingUserId] = useState<number | null>(null);
   // Связанные аккаунты для переключения (токен → user)
   const [linkedAccounts, setLinkedAccounts] = useState<{ token: string; user: User }[]>(() => {
@@ -2834,19 +2829,11 @@ export default function Index() {
       try {
         const u = JSON.parse(saved) as User;
         setCurrentUser(u);
+        // is_admin определяем только по полю из сохранённого профиля
         if ((u as User & { is_admin?: boolean }).is_admin) setIsAdmin(true);
       } catch { /* ignore */ }
     }
     setAuthChecked(true);
-  }, []);
-
-  useEffect(() => {
-    let offlineTimer: ReturnType<typeof setTimeout>;
-    const handleOffline = () => { offlineTimer = setTimeout(() => setOffline(true), 2000); };
-    const handleOnline = () => { clearTimeout(offlineTimer); setOffline(false); };
-    networkEvents.addEventListener("offline", handleOffline);
-    networkEvents.addEventListener("online", handleOnline);
-    return () => { networkEvents.removeEventListener("offline", handleOffline); networkEvents.removeEventListener("online", handleOnline); };
   }, []);
 
   useEffect(() => {
@@ -3062,11 +3049,6 @@ export default function Index() {
         {showCreatePost && currentUser && (
           <CreatePostModal userInitials={userInitials} onClose={() => setShowCreatePost(false)}
             onCreated={() => { setShowCreatePost(false); setActive("feed"); }} />
-        )}
-        {offline && (
-          <div className="flex items-center justify-center gap-2 px-4 py-2 text-xs font-medium text-white flex-shrink-0" style={{ background: "hsl(0,72%,48%)" }}>
-            <Icon name="WifiOff" size={13} />Нет соединения с сервером. Проверьте подключение к интернету.
-          </div>
         )}
         <header className="h-12 flex-shrink-0 flex items-center justify-between px-4 border-b bg-card" style={{ borderColor: "hsl(216,20%,88%)" }}>
           <div className="flex items-center gap-3">

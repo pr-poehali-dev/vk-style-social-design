@@ -1,5 +1,5 @@
 """
-Посты: лента, создание, лайки, комментарии, удаление, просмотры, шары, профиль, админ-панель. v2
+Посты: лента, создание, лайки, комментарии, удаление, просмотры, шары, профиль, админ-панель.
 """
 import json, os, hashlib
 import psycopg2
@@ -47,7 +47,7 @@ def handler(event: dict, context) -> dict:
     body = {}
     if event.get("body"):
         try: body = json.loads(event["body"])
-        except Exception: pass
+        except: pass
 
     token = (event.get("headers") or {}).get("X-Auth-Token", "")
     qs = event.get("queryStringParameters") or {}
