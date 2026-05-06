@@ -1,5 +1,5 @@
 """
-Социальные функции: подписки, уведомления, поиск людей, чат, медиа, аватар.
+Социальные функции: подписки, уведомления, поиск людей, чат, медиа, аватар. v2
 """
 import json, os, base64, uuid, mimetypes
 import psycopg2
@@ -47,9 +47,23 @@ def get_user_stats(cur, uid):
     following = cur.fetchone()[0]
     cur.execute(f"SELECT COUNT(*) FROM {SCHEMA}.posts WHERE user_id=%s", (uid,))
     posts = cur.fetchone()[0]
-    cur.execute(f"SELECT COALESCE(SUM(views_count),0), COALESCE(SUM(reach_count),0) FROM {SCHEMA}.posts WHERE user_id=%s", (uid,))
-    vs = cur.fetchone()
-    return {"followers": int(followers), "following": int(following), "posts": int(posts), "views": int(vs[0]), "reach": int(vs[1])}
+    # Уникальные просмотры из post_views (по user_id или ip_hash)
+    cur.execute(f"""
+        SELECT COUNT(DISTINCT COALESCE(pv.user_id::text, pv.ip_hash))
+        FROM {SCHEMA}.post_views pv
+        JOIN {SCHEMA}.posts p ON p.id = pv.post_id
+        WHERE p.user_id = %s
+    """, (uid,))
+    views = cur.fetchone()[0]
+    # Охват = уникальные пользователи, видевшие посты (без учёта автора)
+    cur.execute(f"""
+        SELECT COUNT(DISTINCT COALESCE(pv.user_id::text, pv.ip_hash))
+        FROM {SCHEMA}.post_views pv
+        JOIN {SCHEMA}.posts p ON p.id = pv.post_id
+        WHERE p.user_id = %s AND (pv.user_id IS NULL OR pv.user_id != %s)
+    """, (uid, uid))
+    reach = cur.fetchone()[0]
+    return {"followers": int(followers), "following": int(following), "posts": int(posts), "views": int(views), "reach": int(reach)}
 
 
 def handler(event: dict, context) -> dict:
@@ -59,7 +73,8 @@ def handler(event: dict, context) -> dict:
     method = event.get("httpMethod", "GET")
     body = {}
     if event.get("body"):
-        body = json.loads(event["body"])
+        try: body = json.loads(event["body"])
+        except Exception: pass
 
     token = (event.get("headers") or {}).get("X-Auth-Token", "")
     qs = event.get("queryStringParameters") or {}
@@ -349,6 +364,22 @@ def handler(event: dict, context) -> dict:
             "created_at": str(cat), "is_me": True, "sender_id": uid,
             "sender_name": uname, "sender_initials": initials(uname), "conv_id": conv_id}})
 
+    # --- delete conversation ---
+    if action == "chat_delete":
+        if not token: return err(401, "Не авторизован")
+        conv_id = body.get("conv_id")
+        if not conv_id: return err(400, "conv_id обязателен")
+        conn = get_conn(); cur = conn.cursor()
+        user = get_user_by_token(cur, token)
+        if not user: conn.close(); return err(401, "Сессия истекла")
+        uid = user[0]
+        cur.execute(f"SELECT 1 FROM {SCHEMA}.conversations WHERE id=%s AND (user1_id=%s OR user2_id=%s)", (conv_id, uid, uid))
+        if not cur.fetchone(): conn.close(); return err(403, "Нет доступа")
+        cur.execute(f"UPDATE {SCHEMA}.messages SET text='', media_url='', media_type='' WHERE conversation_id=%s", (conv_id,))
+        cur.execute(f"UPDATE {SCHEMA}.conversations SET last_message_at=NOW() WHERE id=%s", (conv_id,))
+        conn.commit(); conn.close()
+        return ok({"ok": True})
+
     # --- start conversation ---
     if action == "chat_start":
         if not token: return err(401, "Не авторизован")
@@ -358,6 +389,9 @@ def handler(event: dict, context) -> dict:
         user = get_user_by_token(cur, token)
         if not user: conn.close(); return err(401, "Сессия истекла")
         uid = user[0]
+        # Проверяем черный список (в обе стороны)
+        cur.execute(f"SELECT 1 FROM {SCHEMA}.blacklist WHERE (user_id=%s AND blocked_id=%s) OR (user_id=%s AND blocked_id=%s)", (uid, int(partner_id), int(partner_id), uid))
+        if cur.fetchone(): conn.close(); return err(403, "Переписка с этим пользователем недоступна")
         conv_id = get_or_create_conv(cur, uid, int(partner_id))
         cur.execute(f"SELECT full_name, job_title, avatar_url FROM {SCHEMA}.users WHERE id=%s", (partner_id,))
         p = cur.fetchone()
@@ -383,7 +417,7 @@ def handler(event: dict, context) -> dict:
         if not file_data: return err(400, "Файл не передан")
         if "," in file_data: file_data = file_data.split(",", 1)[1]
         try: data_bytes = base64.b64decode(file_data)
-        except: return err(400, "Ошибка декодирования")
+        except Exception: return err(400, "Ошибка декодирования")
         if len(data_bytes) > 200 * 1024 * 1024: return err(400, "Файл слишком большой (макс 200 МБ)")
         ext = mimetypes.guess_extension(file_type) or ".bin"
         if ext == ".jpe": ext = ".jpg"
@@ -408,7 +442,7 @@ def handler(event: dict, context) -> dict:
         if not file_data: return err(400, "Файл не передан")
         if "," in file_data: file_data = file_data.split(",", 1)[1]
         try: data_bytes = base64.b64decode(file_data)
-        except: return err(400, "Ошибка декодирования")
+        except Exception: return err(400, "Ошибка декодирования")
         if len(data_bytes) > 10 * 1024 * 1024: return err(400, "Обложка не более 10 МБ")
         ext = mimetypes.guess_extension(file_type) or ".jpg"
         if ext == ".jpe": ext = ".jpg"
@@ -457,7 +491,7 @@ def handler(event: dict, context) -> dict:
         if not file_data: return err(400, "Файл не передан")
         if "," in file_data: file_data = file_data.split(",", 1)[1]
         try: data_bytes = base64.b64decode(file_data)
-        except: return err(400, "Ошибка декодирования")
+        except Exception: return err(400, "Ошибка декодирования")
         if len(data_bytes) > 5 * 1024 * 1024: return err(400, "Аватар не более 5 МБ")
         ext = mimetypes.guess_extension(file_type) or ".jpg"
         if ext == ".jpe": ext = ".jpg"

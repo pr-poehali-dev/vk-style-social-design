@@ -16,6 +16,8 @@ function fetchWithTimeout(input: RequestInfo, init?: RequestInit, timeoutMs = TI
   return fetch(input, { ...init, signal: controller.signal }).finally(() => clearTimeout(id));
 }
 
+const networkEvents = new EventTarget();
+
 async function apiPost(url: string, body: Record<string, unknown>, isUpload = false) {
   try {
     const res = await fetchWithTimeout(url, {
@@ -27,8 +29,10 @@ async function apiPost(url: string, body: Record<string, unknown>, isUpload = fa
     let json: Record<string, unknown> = {};
     try { json = JSON.parse(text); } catch { /* ignore */ }
     if (typeof json === "string") { try { json = JSON.parse(json as string); } catch { /* ignore */ } }
+    networkEvents.dispatchEvent(new Event("online"));
     return { ok: res.ok, data: json };
   } catch {
+    networkEvents.dispatchEvent(new Event("offline"));
     return { ok: false, data: { error: "Нет соединения с сервером" } };
   }
 }
@@ -429,7 +433,7 @@ function CreatePostModal({ userInitials, onClose, onCreated }: { userInitials: s
       const b64 = await readFileAsBase64(file);
       setMediaPreview(b64);
     } else {
-      setMediaPreview("video");
+      setMediaPreview(URL.createObjectURL(file));
     }
   };
 
@@ -484,14 +488,8 @@ function CreatePostModal({ userInitials, onClose, onCreated }: { userInitials: s
         {/* Media preview */}
         {mediaPreview && (
           <div className="relative mb-3 rounded-lg overflow-hidden">
-            {mediaPreview === "video" ? (
-              <div className="flex items-center gap-3 px-4 py-3 rounded-lg" style={{ background: "hsl(216,20%,96%)" }}>
-                <Icon name="Video" size={20} style={{ color: "hsl(213,80%,40%)" }} />
-                <div>
-                  <div className="text-sm font-medium truncate">{mediaFile?.name}</div>
-                  <div className="text-xs" style={{ color: "hsl(220,15%,55%)" }}>{mediaFile ? (mediaFile.size / 1024 / 1024).toFixed(1) + " МБ" : ""}</div>
-                </div>
-              </div>
+            {mediaFile?.type.startsWith("video/") ? (
+              <video src={mediaPreview} controls className="w-full max-h-48 rounded-lg" />
             ) : (
               <img src={mediaPreview} alt="preview" className="w-full max-h-48 object-cover rounded-lg" />
             )}
@@ -737,6 +735,23 @@ function UserProfilePage({ userId, currentUser, onBack, onOpenChat, onOpenProfil
 
   if (loading) return <div className="max-w-3xl mx-auto px-4 py-10"><div className="h-48 rounded-xl shimmer" /></div>;
   if (!profile) return <div className="text-center py-20 text-sm" style={{ color: "hsl(220,15%,55%)" }}>Профиль не найден</div>;
+
+  if (blocked) return (
+    <div className="max-w-3xl mx-auto px-4 py-5">
+      <button className="flex items-center gap-2 text-sm mb-4" style={{ color: "hsl(213,80%,40%)" }} onClick={onBack}>
+        <Icon name="ArrowLeft" size={16} />Назад
+      </button>
+      <div className="post-card text-center py-16">
+        <Icon name="ShieldOff" size={40} className="mx-auto mb-4 opacity-40" style={{ color: "hsl(0,72%,48%)" }} />
+        <div className="font-semibold text-base mb-1">Пользователь заблокирован</div>
+        <div className="text-sm mb-4" style={{ color: "hsl(220,15%,55%)" }}>Вы добавили этого пользователя в чёрный список</div>
+        <button className="btn-primary text-sm px-5 py-2" onClick={async () => {
+          const r = await apiPost(SOCIAL_URL, { action: "blacklist_remove", user_id: userId });
+          if (r.ok) setBlocked(false);
+        }}>Разблокировать</button>
+      </div>
+    </div>
+  );
 
   const socials = [
     { key: "vk", label: "ВКонтакте", icon: "Globe", color: "hsl(213,90%,50%)", href: `https://vk.com/${profile.social_vk}`, value: profile.social_vk },
@@ -1051,7 +1066,7 @@ function GroupDetailPage({ group, currentUser, onBack }: { group: Group; current
   return (
     <div className="max-w-2xl mx-auto px-4 py-4">
       {mediaViewer && <MediaViewer url={mediaViewer.url} type={mediaViewer.type} onClose={() => setMediaViewer(null)} />}
-      <input ref={fileRef} type="file" accept="image/*,video/*" className="hidden" onChange={async (e) => { const f = e.target.files?.[0]; if (!f) return; setMediaFile(f); if (f.type.startsWith("image/")) { setMediaPreview(await readFileAsBase64(f)); } else { setMediaPreview("video"); } }} />
+      <input ref={fileRef} type="file" accept="image/*,video/*" className="hidden" onChange={async (e) => { const f = e.target.files?.[0]; if (!f) return; setMediaFile(f); if (f.type.startsWith("image/")) { setMediaPreview(await readFileAsBase64(f)); } else { setMediaPreview(URL.createObjectURL(f)); } }} />
       <input ref={docRef} type="file" accept=".pdf,.doc,.docx,.xls,.xlsx,.txt,.zip,.rar" className="hidden" onChange={async (e) => { const f = e.target.files?.[0]; if (!f) return; setMediaFile(f); setMediaPreview("document"); }} />
 
       <button className="flex items-center gap-2 text-sm mb-4" style={{ color: "hsl(213,80%,40%)" }} onClick={onBack}>
@@ -1101,11 +1116,8 @@ function GroupDetailPage({ group, currentUser, onBack }: { group: Group; current
                     placeholder="Текст публикации..." value={newPostText} onChange={(e) => setNewPostText(e.target.value)} />
                   {mediaPreview && (
                     <div className="relative mt-2">
-                      {mediaPreview === "video" ? (
-                        <div className="flex items-center gap-2 p-3 rounded-lg" style={{ background: "hsl(216,20%,96%)" }}>
-                          <Icon name="Video" size={18} style={{ color: "hsl(213,80%,40%)" }} />
-                          <span className="text-sm truncate">{mediaFile?.name}</span>
-                        </div>
+                      {mediaPreview && mediaFile?.type.startsWith("video/") ? (
+                        <video src={mediaPreview} controls className="w-full max-h-48 rounded-lg" />
                       ) : mediaPreview === "document" ? (
                         <div className="flex items-center gap-2 p-3 rounded-lg" style={{ background: "hsl(216,20%,96%)" }}>
                           <Icon name="FileText" size={18} style={{ color: "hsl(213,80%,40%)" }} />
@@ -1347,7 +1359,7 @@ function GroupsPage({ currentUser }: { currentUser: User | null }) {
   );
 }
 
-function PostCard({ post, onLike, onCommentAdded, onDelete, userInitials, userAvatarUrl, onOpenProfile }: {
+function PostCard({ post, onLike, onCommentAdded, onDelete, userInitials, userAvatarUrl, onOpenProfile, isAdmin }: {
   post: Post;
   onLike: (id: number) => void;
   onCommentAdded: (id: number) => void;
@@ -1355,6 +1367,7 @@ function PostCard({ post, onLike, onCommentAdded, onDelete, userInitials, userAv
   userInitials: string;
   userAvatarUrl?: string;
   onOpenProfile?: (uid: number) => void;
+  isAdmin?: boolean;
 }) {
   const [showComments, setShowComments] = useState(false);
   const [comments, setComments] = useState<Comment[]>([]);
@@ -1429,7 +1442,7 @@ function PostCard({ post, onLike, onCommentAdded, onDelete, userInitials, userAv
           <div className="text-xs mt-0.5" style={{ color: "hsl(220,15%,55%)" }}>{post.author.job_title}</div>
           <div className="text-xs mt-0.5" style={{ color: "hsl(220,15%,65%)" }}>{timeAgo(post.created_at)}</div>
         </div>
-        {post.is_mine && (
+        {(post.is_mine || isAdmin) && (
           <div className="relative">
             <button className="w-7 h-7 flex items-center justify-center rounded-md hover:bg-muted" style={{ color: "hsl(220,15%,55%)" }} onClick={() => setMenuOpen(v => !v)}>
               <Icon name="MoreHorizontal" size={15} />
@@ -1525,9 +1538,10 @@ function PostCard({ post, onLike, onCommentAdded, onDelete, userInitials, userAv
   );
 }
 
-function FeedPage({ currentUser, onOpenProfile, cache, setCache, loaded, onLoaded }: {
+function FeedPage({ currentUser, onOpenProfile, cache, setCache, loaded, onLoaded, isAdmin }: {
   currentUser: User | null; onOpenProfile?: (uid: number) => void;
   cache: Post[]; setCache: (p: Post[]) => void; loaded: boolean; onLoaded: () => void;
+  isAdmin?: boolean;
 }) {
   const [feedPosts, setFeedPostsLocal] = useState<Post[]>(cache);
   const [loading, setLoading] = useState(!loaded);
@@ -1616,7 +1630,7 @@ function FeedPage({ currentUser, onOpenProfile, cache, setCache, loaded, onLoade
       {feedPosts.map((post) => (
         <PostCard key={post.id} post={post} onLike={handleLike} onCommentAdded={handleCommentAdded}
           onDelete={handleDelete} userInitials={userInitials} userAvatarUrl={currentUser?.avatar_url}
-          onOpenProfile={onOpenProfile} />
+          onOpenProfile={onOpenProfile} isAdmin={isAdmin} />
       ))}
     </div>
   );
@@ -1985,6 +1999,16 @@ function MessagesPage({ currentUser }: { currentUser: User | null }) {
 
   const myInitials = currentUser ? getInitials(currentUser.full_name) : "?";
 
+  const deleteConv = async (convId: number, e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (!confirm("Удалить диалог?")) return;
+    const r = await apiPost(SOCIAL_URL, { action: "chat_delete", conv_id: convId });
+    if (r.ok) {
+      setConvs((prev) => prev.filter((c) => c.id !== convId));
+      if (activeConv?.id === convId) { setActiveConv(null); setMessages([]); setShowMobileChat(false); }
+    }
+  };
+
   const ConvList = () => (
     <div className="flex-1 overflow-y-auto">
       {loadingConvs && [1,2,3].map((i) => <div key={i} className="h-16 mx-3 my-1 rounded-lg shimmer" />)}
@@ -1995,9 +2019,9 @@ function MessagesPage({ currentUser }: { currentUser: User | null }) {
         </div>
       )}
       {convs.map((conv) => (
-        <button key={conv.id}
-          className={`w-full px-3 py-3 flex items-center gap-3 text-left transition-colors border-b ${activeConv?.id === conv.id ? "bg-blue-50" : "hover:bg-gray-50"}`}
-          style={{ borderColor: "hsl(216,20%,93%)" }}
+        <div key={conv.id}
+          className={`w-full px-3 py-3 flex items-center gap-3 text-left transition-colors border-b group ${activeConv?.id === conv.id ? "bg-blue-50" : "hover:bg-gray-50"}`}
+          style={{ borderColor: "hsl(216,20%,93%)", cursor: "pointer" }}
           onClick={() => openConv(conv)}>
           <Avatar initials={conv.partner.initials} avatarUrl={conv.partner.avatar_url} size="sm" />
           <div className="flex-1 min-w-0">
@@ -2007,7 +2031,13 @@ function MessagesPage({ currentUser }: { currentUser: User | null }) {
             </div>
             <div className="text-xs truncate mt-0.5" style={{ color: "hsl(220,15%,55%)" }}>{conv.last_message}</div>
           </div>
-        </button>
+          <button className="opacity-0 group-hover:opacity-100 p-1 rounded hover:bg-red-50 flex-shrink-0 transition-all"
+            style={{ color: "hsl(0,72%,50%)" }}
+            onClick={(e) => deleteConv(conv.id, e)}
+            title="Удалить диалог">
+            <Icon name="Trash2" size={13} />
+          </button>
+        </div>
       ))}
     </div>
   );
@@ -2258,7 +2288,7 @@ function EditProfileModal({
   );
 }
 
-function ProfilePage({ user, onUserUpdate, onOpenProfile, onStartChat }: { user?: User; onUserUpdate?: (u: User) => void; onOpenProfile?: (uid: number) => void; onStartChat?: (uid: number) => void }) {
+function ProfilePage({ user, onUserUpdate, onOpenProfile, onStartChat, isAdmin }: { user?: User; onUserUpdate?: (u: User) => void; onOpenProfile?: (uid: number) => void; onStartChat?: (uid: number) => void; isAdmin?: boolean }) {
   const [editOpen, setEditOpen] = useState(false);
   const [uploadingAvatar, setUploadingAvatar] = useState(false);
   const [uploadingCover, setUploadingCover] = useState(false);
@@ -2592,6 +2622,7 @@ function ProfilePage({ user, onUserUpdate, onOpenProfile, onStartChat }: { user?
               onDelete={handleDeletePost}
               userInitials={displayInitials}
               userAvatarUrl={user?.avatar_url}
+              isAdmin={isAdmin}
             />
           ))}
           {userPosts.length === 0 && (
@@ -2607,10 +2638,11 @@ function ProfilePage({ user, onUserUpdate, onOpenProfile, onStartChat }: { user?
   );
 }
 
-function AdminPage() {
+function AdminPage({ onOpenProfile }: { onOpenProfile?: (uid: number) => void } = {}) {
   const [data, setData] = useState<{ users: unknown[]; posts: unknown[]; stats: { total_users: number; total_posts: number; total_views: number } } | null>(null);
   const [loading, setLoading] = useState(true);
   const [tab, setTab] = useState<"stats" | "users" | "posts">("stats");
+  const [userSearch, setUserSearch] = useState("");
 
   useEffect(() => {
     apiPost(POSTS_URL, { action: "admin_data" }).then((r) => {
@@ -2674,45 +2706,60 @@ function AdminPage() {
       )}
 
       {tab === "users" && data && (
-        <div className="post-card overflow-hidden p-0">
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm" style={{ minWidth: 480 }}>
-              <thead>
-                <tr style={{ background: "hsl(216,20%,96%)" }}>
-                  <th className="text-left px-4 py-3 text-xs font-semibold whitespace-nowrap" style={{ color: "hsl(220,15%,50%)" }}>Пользователь</th>
-                  <th className="text-left px-4 py-3 text-xs font-semibold whitespace-nowrap" style={{ color: "hsl(220,15%,50%)" }}>Email</th>
-                  <th className="text-center px-3 py-3 text-xs font-semibold whitespace-nowrap" style={{ color: "hsl(220,15%,50%)" }}>Постов</th>
-                  <th className="text-center px-3 py-3 text-xs font-semibold whitespace-nowrap" style={{ color: "hsl(220,15%,50%)" }}>Подп.</th>
-                  <th className="text-center px-3 py-3 text-xs font-semibold whitespace-nowrap" style={{ color: "hsl(220,15%,50%)" }}>Действия</th>
-                </tr>
-              </thead>
-              <tbody>
-                {(data.users as { id: number; email: string; full_name: string; job_title: string; is_admin: boolean; posts_count: number; followers_count: number }[]).map((u) => (
-                  <tr key={u.id} className="border-t" style={{ borderColor: "hsl(216,20%,92%)" }}>
-                    <td className="px-4 py-3">
-                      <div className="font-medium text-sm whitespace-nowrap">{u.full_name}</div>
-                      <div className="text-xs" style={{ color: "hsl(220,15%,55%)" }}>{u.job_title || "—"}</div>
-                    </td>
-                    <td className="px-4 py-3 text-xs whitespace-nowrap" style={{ color: "hsl(220,15%,55%)" }}>{u.email}</td>
-                    <td className="px-3 py-3 text-center text-sm">{u.posts_count}</td>
-                    <td className="px-3 py-3 text-center text-sm">{u.followers_count}</td>
-                    <td className="px-3 py-3">
-                      <div className="flex items-center justify-center gap-2">
-                        <button title={u.is_admin ? "Снять права" : "Сделать админом"}
-                          className="text-xs px-2 py-1 rounded" style={{ background: u.is_admin ? "hsl(0,80%,95%)" : "hsl(216,20%,94%)", color: u.is_admin ? "hsl(0,72%,45%)" : "hsl(220,15%,45%)" }}
-                          onClick={() => toggleAdmin(u.id)}>
-                          <Icon name={u.is_admin ? "ShieldOff" : "Shield"} size={12} />
-                        </button>
-                        <button title="Удалить" className="text-xs px-2 py-1 rounded" style={{ background: "hsl(0,80%,95%)", color: "hsl(0,72%,45%)" }}
-                          onClick={() => deleteUser(u.id, u.full_name)}>
-                          <Icon name="Trash2" size={12} />
-                        </button>
-                      </div>
-                    </td>
+        <div className="space-y-3">
+          <input className="w-full px-3 py-2 rounded-lg border text-sm outline-none" style={{ borderColor: "hsl(216,20%,85%)" }}
+            placeholder="Поиск по имени или email..." value={userSearch} onChange={(e) => setUserSearch(e.target.value)} />
+          <div className="post-card overflow-hidden p-0">
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm" style={{ minWidth: 520 }}>
+                <thead>
+                  <tr style={{ background: "hsl(216,20%,96%)" }}>
+                    <th className="text-left px-4 py-3 text-xs font-semibold whitespace-nowrap" style={{ color: "hsl(220,15%,50%)" }}>Пользователь</th>
+                    <th className="text-left px-4 py-3 text-xs font-semibold whitespace-nowrap" style={{ color: "hsl(220,15%,50%)" }}>Email</th>
+                    <th className="text-center px-3 py-3 text-xs font-semibold whitespace-nowrap" style={{ color: "hsl(220,15%,50%)" }}>Постов</th>
+                    <th className="text-center px-3 py-3 text-xs font-semibold whitespace-nowrap" style={{ color: "hsl(220,15%,50%)" }}>Подп.</th>
+                    <th className="text-center px-3 py-3 text-xs font-semibold whitespace-nowrap" style={{ color: "hsl(220,15%,50%)" }}>Роль</th>
+                    <th className="text-center px-3 py-3 text-xs font-semibold whitespace-nowrap" style={{ color: "hsl(220,15%,50%)" }}>Действия</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody>
+                  {(data.users as { id: number; email: string; full_name: string; job_title: string; is_admin: boolean; posts_count: number; followers_count: number }[])
+                    .filter((u) => !userSearch || u.full_name.toLowerCase().includes(userSearch.toLowerCase()) || u.email.toLowerCase().includes(userSearch.toLowerCase()))
+                    .map((u) => (
+                    <tr key={u.id} className="border-t" style={{ borderColor: "hsl(216,20%,92%)" }}>
+                      <td className="px-4 py-3">
+                        <button className="font-medium text-sm whitespace-nowrap hover:underline text-left" style={{ color: "hsl(213,80%,40%)" }} onClick={() => onOpenProfile?.(u.id)}>{u.full_name}</button>
+                        <div className="text-xs" style={{ color: "hsl(220,15%,55%)" }}>{u.job_title || "—"}</div>
+                      </td>
+                      <td className="px-4 py-3 text-xs whitespace-nowrap" style={{ color: "hsl(220,15%,55%)" }}>{u.email}</td>
+                      <td className="px-3 py-3 text-center text-sm">{u.posts_count}</td>
+                      <td className="px-3 py-3 text-center text-sm">{u.followers_count}</td>
+                      <td className="px-3 py-3 text-center">
+                        <span className="text-xs px-2 py-0.5 rounded-full" style={{ background: u.is_admin ? "hsl(213,80%,94%)" : "hsl(216,20%,94%)", color: u.is_admin ? "hsl(213,80%,35%)" : "hsl(220,15%,50%)" }}>
+                          {u.is_admin ? "Админ" : "Пользователь"}
+                        </span>
+                      </td>
+                      <td className="px-3 py-3">
+                        <div className="flex items-center justify-center gap-1">
+                          <button title="Профиль" className="p-1.5 rounded hover:bg-gray-100" style={{ color: "hsl(213,80%,40%)" }} onClick={() => onOpenProfile?.(u.id)}>
+                            <Icon name="User" size={12} />
+                          </button>
+                          <button title={u.is_admin ? "Снять права" : "Сделать админом"}
+                            className="p-1.5 rounded hover:bg-gray-100" style={{ color: u.is_admin ? "hsl(0,72%,45%)" : "hsl(142,70%,38%)" }}
+                            onClick={() => toggleAdmin(u.id)}>
+                            <Icon name={u.is_admin ? "ShieldOff" : "Shield"} size={12} />
+                          </button>
+                          <button title="Удалить" className="p-1.5 rounded hover:bg-red-50" style={{ color: "hsl(0,72%,45%)" }}
+                            onClick={() => deleteUser(u.id, u.full_name)}>
+                            <Icon name="Trash2" size={12} />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           </div>
         </div>
       )}
@@ -2768,6 +2815,7 @@ export default function Index() {
   const [unreadCount, setUnreadCount] = useState(0);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [isAdmin, setIsAdmin] = useState(false);
+  const [offline, setOffline] = useState(false);
   const [viewingUserId, setViewingUserId] = useState<number | null>(null);
   // Связанные аккаунты для переключения (токен → user)
   const [linkedAccounts, setLinkedAccounts] = useState<{ token: string; user: User }[]>(() => {
@@ -2786,11 +2834,19 @@ export default function Index() {
       try {
         const u = JSON.parse(saved) as User;
         setCurrentUser(u);
-        // is_admin определяем только по полю из сохранённого профиля
         if ((u as User & { is_admin?: boolean }).is_admin) setIsAdmin(true);
       } catch { /* ignore */ }
     }
     setAuthChecked(true);
+  }, []);
+
+  useEffect(() => {
+    let offlineTimer: ReturnType<typeof setTimeout>;
+    const handleOffline = () => { offlineTimer = setTimeout(() => setOffline(true), 2000); };
+    const handleOnline = () => { clearTimeout(offlineTimer); setOffline(false); };
+    networkEvents.addEventListener("offline", handleOffline);
+    networkEvents.addEventListener("online", handleOnline);
+    return () => { networkEvents.removeEventListener("offline", handleOffline); networkEvents.removeEventListener("online", handleOnline); };
   }, []);
 
   useEffect(() => {
@@ -2894,7 +2950,7 @@ export default function Index() {
     switch (active) {
       case "feed": return <FeedPage currentUser={currentUser} onOpenProfile={openUserProfile}
         cache={cachedFeed} setCache={setCachedFeed}
-        loaded={loadedTabs.has("feed")} onLoaded={() => markLoaded("feed")} />;
+        loaded={loadedTabs.has("feed")} onLoaded={() => markLoaded("feed")} isAdmin={isAdmin} />;
       case "friends": return <FriendsPage onOpenProfile={openUserProfile}
         onStartChat={async (uid) => {
           const r = await apiPost(SOCIAL_URL, { action: "chat_start", partner_id: uid });
@@ -2912,8 +2968,8 @@ export default function Index() {
       }} onOpenProfile={openUserProfile} />;
       case "messages": return <MessagesPage currentUser={currentUser} />;
       case "profile": return <ProfilePage user={currentUser} onUserUpdate={(u) => { setCurrentUser(u); localStorage.setItem("nexus_user", JSON.stringify(u)); }} onOpenProfile={openUserProfile}
-        onStartChat={async (uid) => { const r = await apiPost(SOCIAL_URL, { action: "chat_start", partner_id: uid }); if (r.ok) setActive("messages"); }} />;
-      case "admin": return <AdminPage />;
+        onStartChat={async (uid) => { const r = await apiPost(SOCIAL_URL, { action: "chat_start", partner_id: uid }); if (r.ok) setActive("messages"); }} isAdmin={isAdmin} />;
+      case "admin": return <AdminPage onOpenProfile={openUserProfile} />;
     }
   };
 
@@ -3006,6 +3062,11 @@ export default function Index() {
         {showCreatePost && currentUser && (
           <CreatePostModal userInitials={userInitials} onClose={() => setShowCreatePost(false)}
             onCreated={() => { setShowCreatePost(false); setActive("feed"); }} />
+        )}
+        {offline && (
+          <div className="flex items-center justify-center gap-2 px-4 py-2 text-xs font-medium text-white flex-shrink-0" style={{ background: "hsl(0,72%,48%)" }}>
+            <Icon name="WifiOff" size={13} />Нет соединения с сервером. Проверьте подключение к интернету.
+          </div>
         )}
         <header className="h-12 flex-shrink-0 flex items-center justify-between px-4 border-b bg-card" style={{ borderColor: "hsl(216,20%,88%)" }}>
           <div className="flex items-center gap-3">
