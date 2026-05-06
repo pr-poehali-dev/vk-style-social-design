@@ -458,11 +458,15 @@ function CreatePostModal({ userInitials, onClose, onCreated }: { userInitials: s
   const handleMediaSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    if (file.type.startsWith("video/") && file.size > 200 * 1024 * 1024) { setError("Видео не более 200 МБ."); return; }
     if (!file.type.startsWith("video/") && file.size > 100 * 1024 * 1024) { setError("Файл не более 100 МБ"); return; }
     setPhotoFiles([]); setPhotoPreviews([]);
     setMediaFile(file);
-    setMediaPreview(file.type.startsWith("image/") ? await readFileAsBase64(file) : URL.createObjectURL(file));
+    if (file.type.startsWith("image/")) {
+      setMediaPreview(await readFileAsBase64(file));
+    } else {
+      setMediaPreview(URL.createObjectURL(file));
+    }
+    setError("");
   };
 
   const handleMultiSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -483,8 +487,7 @@ function CreatePostModal({ userInitials, onClose, onCreated }: { userInitials: s
   };
 
   const submit = async () => {
-    const hasMedia = !!mediaFile || photoFiles.length > 0;
-    if (!text.trim() && !hasMedia) { setError("Введите текст или добавьте медиа"); return; }
+    if (!text.trim() && !mediaFile && !photoFiles.length) { setError("Введите текст или добавьте медиа"); return; }
     setLoading(true); setError(""); setUploadPercent(0);
     let media_url = "", media_type = "", media_urls: string[] = [];
 
@@ -617,7 +620,7 @@ function CreatePostModal({ userInitials, onClose, onCreated }: { userInitials: s
         {loading && uploadPercent > 0 && uploadPercent < 100 && (
           <div className="mb-3">
             <div className="flex justify-between text-xs mb-1" style={{ color: "hsl(220,15%,55%)" }}>
-              <span>{hasMedia ? "Загрузка файлов..." : "Публикация..."}</span>
+              <span>{hasContent ? "Загрузка файлов..." : "Публикация..."}</span>
               <span>{uploadPercent}%</span>
             </div>
             <div className="w-full h-1.5 rounded-full" style={{ background: "hsl(216,20%,90%)" }}>
@@ -625,19 +628,30 @@ function CreatePostModal({ userInitials, onClose, onCreated }: { userInitials: s
             </div>
           </div>
         )}
-        <div className="flex justify-between items-center">
+        {/* Кнопки медиа + публикация — адаптивные для мобильного */}
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex gap-2">
-            <button onClick={() => multiInputRef.current?.click()} className="btn-outline text-xs px-3 py-1.5 flex items-center gap-1.5" disabled={loading}>
-              <Icon name="Images" size={13} />Фото
+            <button onClick={() => multiInputRef.current?.click()}
+              className="btn-outline flex-1 sm:flex-none text-xs px-3 py-2.5 sm:py-1.5 flex items-center justify-center gap-1.5 min-h-[44px] sm:min-h-0"
+              disabled={loading}>
+              <Icon name="Images" size={16} /><span>Фото</span>
             </button>
-            <button onClick={() => fileInputRef.current?.click()} className="btn-outline text-xs px-3 py-1.5 flex items-center gap-1.5" disabled={loading}>
-              <Icon name="Video" size={13} />Видео
+            <button onClick={() => fileInputRef.current?.click()}
+              className="btn-outline flex-1 sm:flex-none text-xs px-3 py-2.5 sm:py-1.5 flex items-center justify-center gap-1.5 min-h-[44px] sm:min-h-0"
+              disabled={loading}>
+              <Icon name="Video" size={16} /><span>Видео</span>
             </button>
           </div>
           <div className="flex gap-2">
-            <button onClick={onClose} className="btn-outline text-xs px-4 py-2" disabled={loading}>Отмена</button>
-            <button onClick={submit} disabled={loading || !hasContent} className="btn-primary text-xs px-4 py-2" style={{ opacity: loading ? 0.7 : 1 }}>
-              {loading ? <span className="flex items-center gap-1.5"><Icon name="Loader" size={12} className="animate-spin" />{uploadPercent < 90 ? "Загрузка..." : "Публикация..."}</span> : "Опубликовать"}
+            <button onClick={onClose}
+              className="btn-outline flex-1 sm:flex-none text-xs px-4 py-2.5 sm:py-2 min-h-[44px] sm:min-h-0"
+              disabled={loading}>Отмена</button>
+            <button onClick={submit} disabled={loading || !hasContent}
+              className="btn-primary flex-1 sm:flex-none text-xs px-4 py-2.5 sm:py-2 min-h-[44px] sm:min-h-0"
+              style={{ opacity: loading ? 0.7 : 1 }}>
+              {loading
+                ? <span className="flex items-center justify-center gap-1.5"><Icon name="Loader" size={12} className="animate-spin" />{uploadPercent < 90 ? "Загрузка..." : "Публикация..."}</span>
+                : "Опубликовать"}
             </button>
           </div>
         </div>
@@ -1146,16 +1160,20 @@ function UserProfilePage({ userId, currentUser, onBack, onOpenChat, onOpenProfil
               </div>
             </>
           )}
-          {posts.filter((p) => !p.media_url).length > 0 && (
+          {posts.filter((p) => !p.media_url && !(p.media_urls && p.media_urls.length)).length > 0 && (
             <>
               <div className="text-xs font-medium mb-2" style={{ color: "hsl(220,15%,50%)" }}>Текстовые посты</div>
               <div className="space-y-2">
-                {posts.filter((p) => !p.media_url).map((p) => (
+                {posts.filter((p) => !p.media_url && !(p.media_urls && p.media_urls.length)).map((p) => (
                   <div key={p.id} className="post-card py-2 px-4">
                     <p className="text-sm" style={{ color: "hsl(220,25%,20%)" }}>{p.text || "—"}</p>
                     <div className="text-xs mt-1 flex items-center gap-3" style={{ color: "hsl(220,15%,60%)" }}>
                       <span>{timeAgo(p.created_at)}</span>
-                      <span className="flex items-center gap-1"><Icon name="Heart" size={11} />{p.likes_count}</span>
+                      <button className="flex items-center gap-1 transition-colors"
+                        style={{ color: p.liked ? "hsl(0,72%,51%)" : undefined }}
+                        onClick={async () => { const r = await apiPost(POSTS_URL, { action: "like", post_id: p.id }); if (r.ok) setPosts(prev => prev.map(pp => pp.id === p.id ? { ...pp, liked: r.data.liked as boolean, likes_count: r.data.likes_count as number } : pp)); }}>
+                        <Icon name="Heart" size={11} style={{ fill: p.liked ? "currentColor" : "none" }} />{p.likes_count > 0 ? p.likes_count : ""}
+                      </button>
                       <span className="flex items-center gap-1"><Icon name="Eye" size={11} />{p.views_count}</span>
                     </div>
                   </div>
@@ -1209,10 +1227,14 @@ function GroupDetailPage({ group, currentUser, onBack }: { group: Group; current
   const [showCreate, setShowCreate] = useState(false);
   const [mediaFile, setMediaFile] = useState<File | null>(null);
   const [mediaPreview, setMediaPreview] = useState("");
+  const [photoFiles, setPhotoFilesG] = useState<File[]>([]);
+  const [photoPreviews, setPhotoPreviewsG] = useState<string[]>([]);
+  const [photoSlide, setPhotoSlide] = useState(0);
   const [posting, setPosting] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
-  const [mediaViewer, setMediaViewer] = useState<{ url: string; type: string } | null>(null);
+  const [mediaViewer, setMediaViewer] = useState<{ url: string; type: string; urls?: string[] } | null>(null);
   const fileRef = useRef<HTMLInputElement | null>(null);
+  const photoRef = useRef<HTMLInputElement | null>(null);
   const docRef = useRef<HTMLInputElement | null>(null);
 
   const [openComments, setOpenComments] = useState<number | null>(null);
@@ -1264,51 +1286,59 @@ function GroupDetailPage({ group, currentUser, onBack }: { group: Group; current
   };
 
   const handlePost = async () => {
-    if (!newPostText.trim() && !mediaFile) return;
-    if (mediaFile && mediaFile.type.startsWith("video/") && mediaFile.size > 15 * 1024 * 1024) {
-      alert("Видео не более 15 МБ. Сожмите файл или обрежьте длину.");
-      return;
-    }
-    if (mediaFile && !mediaFile.type.startsWith("video/") && mediaFile.size > 100 * 1024 * 1024) {
-      alert("Файл слишком большой. Максимальный размер — 100 МБ.");
-      return;
-    }
-    setPosting(true);
-    setUploadProgress(0);
-    let media_url = "", media_type = "";
-    if (mediaFile) {
-      setUploadProgress(10);
-      let b64: string;
-      try {
-        b64 = await readFileAsBase64(mediaFile);
-      } catch {
-        alert("Не удалось прочитать файл. Попробуйте меньший размер.");
-        setPosting(false);
-        return;
+    if (!newPostText.trim() && !mediaFile && !photoFiles.length) return;
+    setPosting(true); setUploadProgress(0);
+    let media_url = "", media_type = "", media_urls: string[] = [];
+    try {
+      if (photoFiles.length > 1) {
+        setUploadProgress(10);
+        const encoded = await Promise.all(photoFiles.map(f => readFileAsBase64(f)));
+        setUploadProgress(40);
+        const r2 = await apiPost(SOCIAL_URL, { action: "upload_media_multi", files: encoded.map((fd, i) => ({ file_data: fd, file_type: photoFiles[i].type })) }, true);
+        setUploadProgress(85);
+        if (!r2.ok) { alert(r2.data?.error || "Ошибка загрузки фото"); setPosting(false); setUploadProgress(0); return; }
+        media_urls = (r2.data.files as { url: string }[]).map(u => u.url);
+        media_url = media_urls[0]; media_type = "image";
+      } else if (mediaFile || photoFiles.length === 1) {
+        const f = mediaFile || photoFiles[0];
+        setUploadProgress(10);
+        const b64 = await readFileAsBase64(f);
+        setUploadProgress(55);
+        const r2 = await apiPost(SOCIAL_URL, { action: "upload_media", file_data: b64, file_type: f.type }, true);
+        setUploadProgress(85);
+        if (!r2.ok) { alert(r2.data?.error || "Ошибка загрузки файла"); setPosting(false); setUploadProgress(0); return; }
+        media_url = r2.data.url as string; media_type = r2.data.media_type as string;
       }
-      setUploadProgress(60);
-      const r2 = await apiPost(SOCIAL_URL, { action: "upload_media", file_data: b64, file_type: mediaFile.type }, true);
-      setUploadProgress(90);
-      if (!r2.ok) {
-        alert(r2.data?.error || "Ошибка загрузки файла");
-        setPosting(false);
-        setUploadProgress(0);
-        return;
-      }
-      media_url = r2.data.url as string;
-      media_type = r2.data.media_type as string;
+    } catch { alert("Ошибка чтения файла"); setPosting(false); return; }
+    const r = await apiPost(SOCIAL_URL, { action: "group_post_create", group_id: group.id, text: newPostText.trim(), media_url, media_type, media_urls });
+    setPosting(false); setUploadProgress(0);
+    if (r.ok) {
+      setPosts((prev) => [r.data.post as GroupPost, ...prev]);
+      setNewPostText(""); setMediaFile(null); setMediaPreview("");
+      setPhotoFilesG([]); setPhotoPreviewsG([]); setPhotoSlide(0);
+      setShowCreate(false);
     }
-    const r = await apiPost(SOCIAL_URL, { action: "group_post_create", group_id: group.id, text: newPostText.trim(), media_url, media_type });
-    setPosting(false);
-    setUploadProgress(0);
-    if (r.ok) { setPosts((prev) => [r.data.post as GroupPost, ...prev]); setNewPostText(""); setMediaFile(null); setMediaPreview(""); setShowCreate(false); }
   };
 
   return (
     <div className="max-w-2xl mx-auto px-4 py-4">
-      {mediaViewer && <MediaViewer url={mediaViewer.url} type={mediaViewer.type} onClose={() => setMediaViewer(null)} />}
-      <input ref={fileRef} type="file" accept="image/*,video/*" className="hidden" onChange={async (e) => { const f = e.target.files?.[0]; if (!f) return; setMediaFile(f); if (f.type.startsWith("image/")) { setMediaPreview(await readFileAsBase64(f)); } else { setMediaPreview(URL.createObjectURL(f)); } }} />
-      <input ref={docRef} type="file" accept=".pdf,.doc,.docx,.xls,.xlsx,.txt,.zip,.rar" className="hidden" onChange={async (e) => { const f = e.target.files?.[0]; if (!f) return; setMediaFile(f); setMediaPreview("document"); }} />
+      {mediaViewer && <MediaViewer url={mediaViewer.url} type={mediaViewer.type} urls={mediaViewer.urls} onClose={() => setMediaViewer(null)} />}
+      {/* Фото (несколько) */}
+      <input ref={photoRef} type="file" accept="image/*" multiple className="hidden" onChange={async (e) => {
+        const files = Array.from(e.target.files || []).filter(f => f.type.startsWith("image/")).slice(0, 10);
+        if (!files.length) return;
+        setMediaFile(null); setMediaPreview("");
+        setPhotoFilesG(files); setPhotoSlide(0);
+        const previews = await Promise.all(files.map(f => readFileAsBase64(f)));
+        setPhotoPreviewsG(previews);
+      }} />
+      {/* Видео */}
+      <input ref={fileRef} type="file" accept="video/*" className="hidden" onChange={async (e) => {
+        const f = e.target.files?.[0]; if (!f) return;
+        setPhotoFilesG([]); setPhotoPreviewsG([]);
+        setMediaFile(f); setMediaPreview(URL.createObjectURL(f));
+      }} />
+      <input ref={docRef} type="file" accept=".pdf,.doc,.docx,.xls,.xlsx,.txt,.zip,.rar" className="hidden" onChange={async (e) => { const f = e.target.files?.[0]; if (!f) return; setPhotoFilesG([]); setPhotoPreviewsG([]); setMediaFile(f); setMediaPreview("document"); }} />
 
       <button className="flex items-center gap-2 text-sm mb-4" style={{ color: "hsl(213,80%,40%)" }} onClick={onBack}>
         <Icon name="ArrowLeft" size={16} />Назад
@@ -1355,17 +1385,37 @@ function GroupDetailPage({ group, currentUser, onBack }: { group: Group; current
                 <div>
                   <textarea className="w-full px-3 py-2 rounded-lg border text-sm outline-none resize-none" style={{ borderColor: "hsl(216,20%,85%)", minHeight: 80 }}
                     placeholder="Текст публикации..." value={newPostText} onChange={(e) => setNewPostText(e.target.value)} />
+                  {/* Слайдер превью нескольких фото */}
+                  {photoPreviews.length > 0 && (
+                    <div className="relative mt-2 rounded-lg overflow-hidden" style={{ background: "#000" }}>
+                      <img src={photoPreviews[photoSlide]} alt="" className="w-full object-contain rounded-lg" style={{ maxHeight: 200 }} />
+                      {photoPreviews.length > 1 && (
+                        <>
+                          {photoSlide > 0 && <button onClick={() => setPhotoSlide(i => i - 1)} className="absolute left-1 top-1/2 -translate-y-1/2 w-6 h-6 rounded-full flex items-center justify-center" style={{ background: "rgba(0,0,0,0.6)", color: "white" }}><Icon name="ChevronLeft" size={12} /></button>}
+                          {photoSlide < photoPreviews.length - 1 && <button onClick={() => setPhotoSlide(i => i + 1)} className="absolute right-1 top-1/2 -translate-y-1/2 w-6 h-6 rounded-full flex items-center justify-center" style={{ background: "rgba(0,0,0,0.6)", color: "white" }}><Icon name="ChevronRight" size={12} /></button>}
+                          <div className="absolute bottom-1 left-0 right-0 flex justify-center gap-1">{photoPreviews.map((_, i) => <div key={i} className="w-1.5 h-1.5 rounded-full" style={{ background: i === photoSlide ? "white" : "rgba(255,255,255,0.4)" }} />)}</div>
+                          <div className="absolute top-1 left-2 text-xs px-1.5 py-0.5 rounded-full" style={{ background: "rgba(0,0,0,0.55)", color: "white" }}>{photoSlide + 1}/{photoPreviews.length}</div>
+                        </>
+                      )}
+                      <button className="absolute top-1 right-1 w-6 h-6 rounded-full flex items-center justify-center" style={{ background: "rgba(0,0,0,0.6)", color: "white" }} onClick={() => { setPhotoFilesG([]); setPhotoPreviewsG([]); }}><Icon name="X" size={12} /></button>
+                    </div>
+                  )}
+                  {/* Превью видео / документа / одиночного фото */}
                   {mediaPreview && (
                     <div className="relative mt-2">
-                      {mediaPreview && mediaFile?.type.startsWith("video/") ? (
-                        <video src={mediaPreview} controls className="w-full max-h-48 rounded-lg" />
+                      {mediaFile?.type.startsWith("video/") ? (
+                        <video controls playsInline preload="metadata" className="w-full max-h-48 rounded-lg" style={{ background: "#000" }}>
+                          <source src={mediaPreview} type={mediaFile.type} />
+                          <source src={mediaPreview} type="video/mp4" />
+                          <source src={mediaPreview} />
+                        </video>
                       ) : mediaPreview === "document" ? (
                         <div className="flex items-center gap-2 p-3 rounded-lg" style={{ background: "hsl(216,20%,96%)" }}>
                           <Icon name="FileText" size={18} style={{ color: "hsl(213,80%,40%)" }} />
                           <span className="text-sm truncate">{mediaFile?.name}</span>
                         </div>
                       ) : (
-                        <img src={mediaPreview} className="w-full max-h-40 object-cover rounded-lg" />
+                        <img src={mediaPreview} className="w-full max-h-40 object-contain rounded-lg" style={{ background: "#000" }} />
                       )}
                       <button className="absolute top-1 right-1 w-6 h-6 rounded-full flex items-center justify-center" style={{ background: "rgba(0,0,0,0.6)", color: "white" }} onClick={() => { setMediaFile(null); setMediaPreview(""); }}>
                         <Icon name="X" size={12} />
@@ -1382,18 +1432,21 @@ function GroupDetailPage({ group, currentUser, onBack }: { group: Group; current
                       </div>
                     </div>
                   )}
-                  <div className="flex justify-between mt-2 flex-wrap gap-2">
-                    <div className="flex gap-1.5">
-                      <button className="btn-outline text-xs px-3 py-1.5 flex items-center gap-1.5" onClick={() => fileRef.current?.click()}>
-                        <Icon name="Image" size={12} />Фото/Видео
+                  <div className="flex flex-col gap-2 mt-2 sm:flex-row sm:justify-between">
+                    <div className="flex gap-1.5 flex-wrap">
+                      <button className="btn-outline text-xs px-3 py-2.5 sm:py-1.5 flex items-center gap-1.5 min-h-[44px] sm:min-h-0" onClick={() => photoRef.current?.click()}>
+                        <Icon name="Images" size={13} />Фото
                       </button>
-                      <button className="btn-outline text-xs px-3 py-1.5 flex items-center gap-1.5" onClick={() => docRef.current?.click()}>
-                        <Icon name="Paperclip" size={12} />Документ
+                      <button className="btn-outline text-xs px-3 py-2.5 sm:py-1.5 flex items-center gap-1.5 min-h-[44px] sm:min-h-0" onClick={() => fileRef.current?.click()}>
+                        <Icon name="Video" size={13} />Видео
+                      </button>
+                      <button className="btn-outline text-xs px-3 py-2.5 sm:py-1.5 flex items-center gap-1.5 min-h-[44px] sm:min-h-0" onClick={() => docRef.current?.click()}>
+                        <Icon name="Paperclip" size={13} />Документ
                       </button>
                     </div>
                     <div className="flex gap-2">
-                      <button className="btn-outline text-xs px-3 py-1.5" onClick={() => { setShowCreate(false); setNewPostText(""); setMediaFile(null); setMediaPreview(""); }}>Отмена</button>
-                      <button className="btn-primary text-xs px-3 py-1.5" onClick={handlePost} disabled={posting}>
+                      <button className="btn-outline text-xs px-3 py-2.5 sm:py-1.5 min-h-[44px] sm:min-h-0" onClick={() => { setShowCreate(false); setNewPostText(""); setMediaFile(null); setMediaPreview(""); setPhotoFilesG([]); setPhotoPreviewsG([]); }}>Отмена</button>
+                      <button className="btn-primary text-xs px-3 py-2.5 sm:py-1.5 min-h-[44px] sm:min-h-0" onClick={handlePost} disabled={posting}>
                         {posting ? <span className="flex items-center gap-1"><Icon name="Loader" size={12} className="animate-spin" />Отправка...</span> : "Опубликовать"}
                       </button>
                     </div>
