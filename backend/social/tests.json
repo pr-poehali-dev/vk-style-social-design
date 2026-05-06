@@ -6,6 +6,7 @@
       "path": "/",
       "body": {"action": "groups_list"},
       "expectedStatus": 200,
+      "expectedBody": {"groups": []},
       "bodyMatcher": "partial"
     },
     {
@@ -21,14 +22,6 @@
       "method": "POST",
       "path": "/",
       "body": {"action": "get_notifications"},
-      "expectedStatus": 401,
-      "bodyMatcher": "partial"
-    },
-    {
-      "name": "Blacklist add without token",
-      "method": "POST",
-      "path": "/",
-      "body": {"action": "blacklist_add", "user_id": 1},
       "expectedStatus": 401,
       "bodyMatcher": "partial"
     }

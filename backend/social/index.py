@@ -1,5 +1,5 @@
 """
-Социальные функции: подписки, уведомления, поиск людей, чат, медиа, аватар. v2
+Социальные функции: подписки, уведомления, поиск людей, чат, медиа, аватар.
 """
 import json, os, base64, uuid, mimetypes
 import psycopg2
@@ -47,23 +47,9 @@ def get_user_stats(cur, uid):
     following = cur.fetchone()[0]
     cur.execute(f"SELECT COUNT(*) FROM {SCHEMA}.posts WHERE user_id=%s", (uid,))
     posts = cur.fetchone()[0]
-    # Уникальные просмотры из post_views (по user_id или ip_hash)
-    cur.execute(f"""
-        SELECT COUNT(DISTINCT COALESCE(pv.user_id::text, pv.ip_hash))
-        FROM {SCHEMA}.post_views pv
-        JOIN {SCHEMA}.posts p ON p.id = pv.post_id
-        WHERE p.user_id = %s
-    """, (uid,))
-    views = cur.fetchone()[0]
-    # Охват = уникальные пользователи, видевшие посты (без учёта автора)
-    cur.execute(f"""
-        SELECT COUNT(DISTINCT COALESCE(pv.user_id::text, pv.ip_hash))
-        FROM {SCHEMA}.post_views pv
-        JOIN {SCHEMA}.posts p ON p.id = pv.post_id
-        WHERE p.user_id = %s AND (pv.user_id IS NULL OR pv.user_id != %s)
-    """, (uid, uid))
-    reach = cur.fetchone()[0]
-    return {"followers": int(followers), "following": int(following), "posts": int(posts), "views": int(views), "reach": int(reach)}
+    cur.execute(f"SELECT COALESCE(SUM(views_count),0), COALESCE(SUM(reach_count),0) FROM {SCHEMA}.posts WHERE user_id=%s", (uid,))
+    vs = cur.fetchone()
+    return {"followers": int(followers), "following": int(following), "posts": int(posts), "views": int(vs[0]), "reach": int(vs[1])}
 
 
 def handler(event: dict, context) -> dict:
@@ -73,8 +59,7 @@ def handler(event: dict, context) -> dict:
     method = event.get("httpMethod", "GET")
     body = {}
     if event.get("body"):
-        try: body = json.loads(event["body"])
-        except Exception: pass
+        body = json.loads(event["body"])
 
     token = (event.get("headers") or {}).get("X-Auth-Token", "")
     qs = event.get("queryStringParameters") or {}
@@ -200,7 +185,7 @@ def handler(event: dict, context) -> dict:
             f"""
             SELECT n.id, n.type, n.is_read, n.created_at,
                    a.full_name, a.job_title,
-                   p.text, n.post_id, n.comment_id, n.actor_id
+                   p.text, n.post_id, n.comment_id
             FROM {SCHEMA}.notifications n
             LEFT JOIN {SCHEMA}.users a ON a.id = n.actor_id
             LEFT JOIN {SCHEMA}.posts p ON p.id = n.post_id
@@ -238,13 +223,12 @@ def handler(event: dict, context) -> dict:
 
         notifs = []
         for r in rows:
-            nid, ntype, is_read, created_at, actor_name, actor_title, post_text, post_id, comment_id, actor_id = r
+            nid, ntype, is_read, created_at, actor_name, actor_title, post_text, post_id, comment_id = r
             notifs.append({
                 "id": nid,
                 "type": ntype,
                 "is_read": is_read,
                 "created_at": str(created_at),
-                "actor_id": actor_id,
                 "actor_name": actor_name or "Пользователь",
                 "actor_title": actor_title or "",
                 "post_preview": (post_text[:80] + "…") if post_text and len(post_text) > 80 else post_text,
@@ -364,22 +348,6 @@ def handler(event: dict, context) -> dict:
             "created_at": str(cat), "is_me": True, "sender_id": uid,
             "sender_name": uname, "sender_initials": initials(uname), "conv_id": conv_id}})
 
-    # --- delete conversation ---
-    if action == "chat_delete":
-        if not token: return err(401, "Не авторизован")
-        conv_id = body.get("conv_id")
-        if not conv_id: return err(400, "conv_id обязателен")
-        conn = get_conn(); cur = conn.cursor()
-        user = get_user_by_token(cur, token)
-        if not user: conn.close(); return err(401, "Сессия истекла")
-        uid = user[0]
-        cur.execute(f"SELECT 1 FROM {SCHEMA}.conversations WHERE id=%s AND (user1_id=%s OR user2_id=%s)", (conv_id, uid, uid))
-        if not cur.fetchone(): conn.close(); return err(403, "Нет доступа")
-        cur.execute(f"UPDATE {SCHEMA}.messages SET text='', media_url='', media_type='' WHERE conversation_id=%s", (conv_id,))
-        cur.execute(f"UPDATE {SCHEMA}.conversations SET last_message_at=NOW() WHERE id=%s", (conv_id,))
-        conn.commit(); conn.close()
-        return ok({"ok": True})
-
     # --- start conversation ---
     if action == "chat_start":
         if not token: return err(401, "Не авторизован")
@@ -389,9 +357,6 @@ def handler(event: dict, context) -> dict:
         user = get_user_by_token(cur, token)
         if not user: conn.close(); return err(401, "Сессия истекла")
         uid = user[0]
-        # Проверяем черный список (в обе стороны)
-        cur.execute(f"SELECT 1 FROM {SCHEMA}.blacklist WHERE (user_id=%s AND blocked_id=%s) OR (user_id=%s AND blocked_id=%s)", (uid, int(partner_id), int(partner_id), uid))
-        if cur.fetchone(): conn.close(); return err(403, "Переписка с этим пользователем недоступна")
         conv_id = get_or_create_conv(cur, uid, int(partner_id))
         cur.execute(f"SELECT full_name, job_title, avatar_url FROM {SCHEMA}.users WHERE id=%s", (partner_id,))
         p = cur.fetchone()
@@ -417,7 +382,7 @@ def handler(event: dict, context) -> dict:
         if not file_data: return err(400, "Файл не передан")
         if "," in file_data: file_data = file_data.split(",", 1)[1]
         try: data_bytes = base64.b64decode(file_data)
-        except Exception: return err(400, "Ошибка декодирования")
+        except: return err(400, "Ошибка декодирования")
         if len(data_bytes) > 200 * 1024 * 1024: return err(400, "Файл слишком большой (макс 200 МБ)")
         ext = mimetypes.guess_extension(file_type) or ".bin"
         if ext == ".jpe": ext = ".jpg"
@@ -442,7 +407,7 @@ def handler(event: dict, context) -> dict:
         if not file_data: return err(400, "Файл не передан")
         if "," in file_data: file_data = file_data.split(",", 1)[1]
         try: data_bytes = base64.b64decode(file_data)
-        except Exception: return err(400, "Ошибка декодирования")
+        except: return err(400, "Ошибка декодирования")
         if len(data_bytes) > 10 * 1024 * 1024: return err(400, "Обложка не более 10 МБ")
         ext = mimetypes.guess_extension(file_type) or ".jpg"
         if ext == ".jpe": ext = ".jpg"
@@ -491,7 +456,7 @@ def handler(event: dict, context) -> dict:
         if not file_data: return err(400, "Файл не передан")
         if "," in file_data: file_data = file_data.split(",", 1)[1]
         try: data_bytes = base64.b64decode(file_data)
-        except Exception: return err(400, "Ошибка декодирования")
+        except: return err(400, "Ошибка декодирования")
         if len(data_bytes) > 5 * 1024 * 1024: return err(400, "Аватар не более 5 МБ")
         ext = mimetypes.guess_extension(file_type) or ".jpg"
         if ext == ".jpe": ext = ".jpg"
@@ -782,59 +747,5 @@ def handler(event: dict, context) -> dict:
             pass
         conn.close()
         return ok({"ok": True})
-
-    # --- blacklist ---
-    if action == "blacklist_add":
-        if not token: return err(401, "Не авторизован")
-        target_id = body.get("user_id")
-        if not target_id: return err(400, "user_id обязателен")
-        conn = get_conn(); cur = conn.cursor()
-        user = get_user_by_token(cur, token)
-        if not user: conn.close(); return err(401, "Сессия истекла")
-        uid = user[0]
-        if uid == int(target_id): conn.close(); return err(400, "Нельзя добавить себя")
-        cur.execute(f"INSERT INTO {SCHEMA}.blacklist (user_id, blocked_id) VALUES (%s,%s) ON CONFLICT DO NOTHING", (uid, int(target_id)))
-        cur.execute(f"DELETE FROM {SCHEMA}.follows WHERE (follower_id=%s AND following_id=%s) OR (follower_id=%s AND following_id=%s)", (uid, int(target_id), int(target_id), uid))
-        conn.commit(); conn.close()
-        return ok({"blocked": True})
-
-    if action == "blacklist_remove":
-        if not token: return err(401, "Не авторизован")
-        target_id = body.get("user_id")
-        if not target_id: return err(400, "user_id обязателен")
-        conn = get_conn(); cur = conn.cursor()
-        user = get_user_by_token(cur, token)
-        if not user: conn.close(); return err(401, "Сессия истекла")
-        uid = user[0]
-        cur.execute(f"DELETE FROM {SCHEMA}.blacklist WHERE user_id=%s AND blocked_id=%s", (uid, int(target_id)))
-        conn.commit(); conn.close()
-        return ok({"blocked": False})
-
-    if action == "blacklist_list":
-        if not token: return err(401, "Не авторизован")
-        conn = get_conn(); cur = conn.cursor()
-        user = get_user_by_token(cur, token)
-        if not user: conn.close(); return err(401, "Сессия истекла")
-        uid = user[0]
-        cur.execute(f"""SELECT u.id, u.full_name, u.job_title, u.avatar_url, b.created_at
-            FROM {SCHEMA}.blacklist b JOIN {SCHEMA}.users u ON u.id=b.blocked_id
-            WHERE b.user_id=%s ORDER BY b.created_at DESC""", (uid,))
-        rows = cur.fetchall(); conn.close()
-        return ok({"users": [{"id": r[0], "full_name": r[1], "job_title": r[2] or "",
-            "avatar_url": r[3] or "", "blocked_at": str(r[4]),
-            "initials": "".join(w[0] for w in r[1].split() if w)[:2].upper()} for r in rows]})
-
-    if action == "blacklist_check":
-        if not token: return err(401, "Не авторизован")
-        target_id = body.get("user_id")
-        if not target_id: return err(400, "user_id обязателен")
-        conn = get_conn(); cur = conn.cursor()
-        user = get_user_by_token(cur, token)
-        if not user: conn.close(); return err(401, "Сессия истекла")
-        uid = user[0]
-        cur.execute(f"SELECT 1 FROM {SCHEMA}.blacklist WHERE user_id=%s AND blocked_id=%s", (uid, int(target_id)))
-        blocked = cur.fetchone() is not None
-        conn.close()
-        return ok({"blocked": blocked})
 
     return err(400, "Неизвестное действие")
