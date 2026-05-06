@@ -830,40 +830,39 @@ function UserProfilePage({ userId, currentUser, onBack, onOpenChat, onOpenProfil
         </div>
 
         <div className="px-4 pb-5">
-          {/* Аватар + кнопки в одной строке */}
-          <div className="flex items-end justify-between -mt-10 mb-3">
-            <div className="flex-shrink-0 relative" style={{ zIndex: 10 }}>
-              {profile.avatar_url
-                ? <img src={profile.avatar_url} alt={displayInitials} className="w-20 h-20 rounded-full border-4 object-cover" style={{ borderColor: "white" }} />
-                : <div className="w-20 h-20 rounded-full border-4 flex items-center justify-center text-xl font-bold text-white" style={{ background: "hsl(213,80%,40%)", borderColor: "white" }}>{displayInitials}</div>}
-            </div>
-            {currentUser && !profile.is_me && (
-              <div className="flex gap-2 pb-1">
-                {!blocked && !blockedByThem && (
-                  <button onClick={handleFollow} className="flex flex-col items-center gap-0.5 group">
-                    <div className={`w-8 h-8 rounded-full flex items-center justify-center transition-colors ${following ? "bg-gray-200 group-hover:bg-gray-300" : "bg-blue-500 group-hover:bg-blue-600"}`}>
-                      <Icon name={following ? "UserCheck" : "UserPlus"} size={15} style={{ color: following ? "hsl(220,15%,35%)" : "white" }} />
-                    </div>
-                    <span style={{ fontSize: 10, color: "hsl(220,15%,50%)" }}>{following ? "Подписан" : "Подписаться"}</span>
-                  </button>
-                )}
-                {!blocked && !blockedByThem && onOpenChat && (
-                  <button onClick={() => onOpenChat(userId)} className="flex flex-col items-center gap-0.5 group">
-                    <div className="w-8 h-8 rounded-full flex items-center justify-center bg-gray-100 group-hover:bg-gray-200 transition-colors">
-                      <Icon name="MessageCircle" size={15} style={{ color: "hsl(213,80%,40%)" }} />
-                    </div>
-                    <span style={{ fontSize: 10, color: "hsl(220,15%,50%)" }}>Написать</span>
-                  </button>
-                )}
-                <button onClick={handleBlock} disabled={blockLoading} className="flex flex-col items-center gap-0.5 group">
-                  <div className={`w-8 h-8 rounded-full flex items-center justify-center transition-colors ${blocked ? "bg-red-500 group-hover:bg-red-600" : "bg-gray-100 group-hover:bg-red-50"}`}>
-                    <Icon name={blocked ? "ShieldCheck" : "ShieldOff"} size={15} style={{ color: blocked ? "white" : "hsl(0,72%,48%)" }} />
-                  </div>
-                  <span style={{ fontSize: 10, color: blocked ? "hsl(0,72%,48%)" : "hsl(220,15%,50%)" }}>{blockLoading ? "..." : blocked ? "Разблокировать" : "Блокировать"}</span>
-                </button>
-              </div>
-            )}
+          {/* Аватар */}
+          <div className="-mt-10 mb-2" style={{ zIndex: 10, position: "relative" }}>
+            {profile.avatar_url
+              ? <img src={profile.avatar_url} alt={displayInitials} className="w-20 h-20 rounded-full border-4 object-cover" style={{ borderColor: "white" }} />
+              : <div className="w-20 h-20 rounded-full border-4 flex items-center justify-center text-xl font-bold text-white" style={{ background: "hsl(213,80%,40%)", borderColor: "white" }}>{displayInitials}</div>}
           </div>
+          {/* Кнопки — строго под обложкой, прижаты вправо */}
+          {currentUser && !profile.is_me && (
+            <div className="flex gap-2 justify-end mb-2 -mt-8">
+              {!blocked && !blockedByThem && (
+                <button onClick={handleFollow} className="flex flex-col items-center gap-0.5 group">
+                  <div className={`w-8 h-8 rounded-full flex items-center justify-center transition-colors ${following ? "bg-gray-200 group-hover:bg-gray-300" : "bg-blue-500 group-hover:bg-blue-600"}`}>
+                    <Icon name={following ? "UserCheck" : "UserPlus"} size={15} style={{ color: following ? "hsl(220,15%,35%)" : "white" }} />
+                  </div>
+                  <span style={{ fontSize: 10, color: "hsl(220,15%,50%)" }}>{following ? "Подписан" : "Подписаться"}</span>
+                </button>
+              )}
+              {!blocked && !blockedByThem && onOpenChat && (
+                <button onClick={() => onOpenChat(userId)} className="flex flex-col items-center gap-0.5 group">
+                  <div className="w-8 h-8 rounded-full flex items-center justify-center bg-gray-100 group-hover:bg-gray-200 transition-colors">
+                    <Icon name="MessageCircle" size={15} style={{ color: "hsl(213,80%,40%)" }} />
+                  </div>
+                  <span style={{ fontSize: 10, color: "hsl(220,15%,50%)" }}>Написать</span>
+                </button>
+              )}
+              <button onClick={handleBlock} disabled={blockLoading} className="flex flex-col items-center gap-0.5 group">
+                <div className={`w-8 h-8 rounded-full flex items-center justify-center transition-colors ${blocked ? "bg-red-500 group-hover:bg-red-600" : "bg-gray-100 group-hover:bg-red-50"}`}>
+                  <Icon name={blocked ? "ShieldCheck" : "ShieldOff"} size={15} style={{ color: blocked ? "white" : "hsl(0,72%,48%)" }} />
+                </div>
+                <span style={{ fontSize: 10, color: blocked ? "hsl(0,72%,48%)" : "hsl(220,15%,50%)" }}>{blockLoading ? "..." : blocked ? "Разблокировать" : "Блокировать"}</span>
+              </button>
+            </div>
+          )}
 
           {/* Имя, должность, bio */}
           <h1 className="font-bold text-xl leading-tight">{profile.full_name}</h1>
