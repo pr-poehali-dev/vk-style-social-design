@@ -18,6 +18,13 @@ function fetchWithTimeout(input: RequestInfo, init?: RequestInit, timeoutMs = TI
 
 const networkEvents = new EventTarget();
 
+function forceLogout() {
+  localStorage.removeItem("nexus_token");
+  localStorage.removeItem("nexus_user");
+  localStorage.removeItem("nexus_linked_accounts");
+  networkEvents.dispatchEvent(new Event("force_logout"));
+}
+
 async function apiPost(url: string, body: Record<string, unknown>, isUpload = false) {
   try {
     const res = await fetchWithTimeout(url, {
@@ -30,10 +37,11 @@ async function apiPost(url: string, body: Record<string, unknown>, isUpload = fa
     try { json = JSON.parse(text); } catch { /* ignore */ }
     if (typeof json === "string") { try { json = JSON.parse(json as string); } catch { /* ignore */ } }
     networkEvents.dispatchEvent(new Event("online"));
-    return { ok: res.ok, data: json };
+    if (res.status === 401 && getToken()) forceLogout();
+    return { ok: res.ok, status: res.status, data: json };
   } catch {
     networkEvents.dispatchEvent(new Event("offline"));
-    return { ok: false, data: { error: "Нет соединения с сервером" } };
+    return { ok: false, status: 0, data: { error: "Нет соединения с сервером" } };
   }
 }
 
@@ -47,9 +55,10 @@ async function apiGet(url: string, params: Record<string, string> = {}) {
     let json: Record<string, unknown> = {};
     try { json = JSON.parse(text); } catch { /* ignore */ }
     if (typeof json === "string") { try { json = JSON.parse(json as string); } catch { /* ignore */ } }
-    return { ok: res.ok, data: json };
+    if (res.status === 401 && getToken()) forceLogout();
+    return { ok: res.ok, status: res.status, data: json };
   } catch {
-    return { ok: false, data: { error: "Нет соединения с сервером" } };
+    return { ok: false, status: 0, data: { error: "Нет соединения с сервером" } };
   }
 }
 
@@ -2844,9 +2853,23 @@ export default function Index() {
     let offlineTimer: ReturnType<typeof setTimeout>;
     const handleOffline = () => { offlineTimer = setTimeout(() => setOffline(true), 2000); };
     const handleOnline = () => { clearTimeout(offlineTimer); setOffline(false); };
+    const handleForceLogout = () => {
+      setCurrentUser(null);
+      setIsAdmin(false);
+      setOffline(false);
+      setCachedFeed([]);
+      setCachedFriends([]);
+      setCachedNotifs([]);
+      setLoadedTabs(new Set());
+    };
     networkEvents.addEventListener("offline", handleOffline);
     networkEvents.addEventListener("online", handleOnline);
-    return () => { networkEvents.removeEventListener("offline", handleOffline); networkEvents.removeEventListener("online", handleOnline); };
+    networkEvents.addEventListener("force_logout", handleForceLogout);
+    return () => {
+      networkEvents.removeEventListener("offline", handleOffline);
+      networkEvents.removeEventListener("online", handleOnline);
+      networkEvents.removeEventListener("force_logout", handleForceLogout);
+    };
   }, []);
 
   useEffect(() => {
@@ -2854,13 +2877,12 @@ export default function Index() {
     // Запрос is_admin только один раз при входе (через auth/me не грузим admin_data)
     const token = localStorage.getItem("nexus_token");
     if (token) {
-      fetch(AUTH_URL, { method: "POST", headers: { "Content-Type": "application/json", "X-Auth-Token": token }, body: JSON.stringify({ action: "me" }) })
-        .then((r) => r.json()).then((j) => {
-          try {
-            const data = typeof j === "string" ? JSON.parse(j) : j;
-            if (data?.is_admin) setIsAdmin(true);
-          } catch { /* ignore */ }
-        }).catch(() => {});
+      apiPost(AUTH_URL, { action: "me" }).then((r) => {
+        if (r.ok && r.data) {
+          const data = r.data as { is_admin?: boolean };
+          if (data.is_admin) setIsAdmin(true);
+        }
+      }).catch(() => {});
     }
     requestPushPermission();
     let prevCount = 0;
@@ -2888,12 +2910,20 @@ export default function Index() {
   const handleLogout = async () => {
     const token = localStorage.getItem("nexus_token");
     if (token) {
-      await fetch(AUTH_URL, { method: "POST", headers: { "Content-Type": "application/json", "X-Auth-Token": token }, body: JSON.stringify({ action: "logout" }) });
+      try {
+        await fetchWithTimeout(AUTH_URL, { method: "POST", headers: { "Content-Type": "application/json", "X-Auth-Token": token }, body: JSON.stringify({ action: "logout" }) });
+      } catch { /* игнорируем ошибку сети при выходе */ }
     }
     localStorage.removeItem("nexus_token");
     localStorage.removeItem("nexus_user");
+    localStorage.removeItem("nexus_linked_accounts");
     setCurrentUser(null);
     setIsAdmin(false);
+    setOffline(false);
+    setCachedFeed([]);
+    setCachedFriends([]);
+    setCachedNotifs([]);
+    setLoadedTabs(new Set());
   };
 
   const navigate = (section: Section) => {
