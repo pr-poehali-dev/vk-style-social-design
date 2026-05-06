@@ -829,42 +829,41 @@ function UserProfilePage({ userId, currentUser, onBack, onOpenChat, onOpenProfil
             : <div className="w-full h-full" style={{ background: "linear-gradient(135deg, hsl(221,55%,20%) 0%, hsl(213,80%,35%) 100%)" }} />}
         </div>
 
-        <div className="px-5 pb-5">
-          {/* Аватар */}
-          <div className="flex items-start justify-between -mt-10 mb-2">
+        <div className="px-4 pb-5">
+          {/* Аватар + кнопки в одной строке */}
+          <div className="flex items-end justify-between -mt-10 mb-3">
             <div className="flex-shrink-0 relative" style={{ zIndex: 10 }}>
               {profile.avatar_url
                 ? <img src={profile.avatar_url} alt={displayInitials} className="w-20 h-20 rounded-full border-4 object-cover" style={{ borderColor: "white" }} />
                 : <div className="w-20 h-20 rounded-full border-4 flex items-center justify-center text-xl font-bold text-white" style={{ background: "hsl(213,80%,40%)", borderColor: "white" }}>{displayInitials}</div>}
             </div>
+            {currentUser && !profile.is_me && (
+              <div className="flex gap-2 pb-1">
+                {!blocked && !blockedByThem && (
+                  <button onClick={handleFollow} className="flex flex-col items-center gap-0.5 group">
+                    <div className={`w-8 h-8 rounded-full flex items-center justify-center transition-colors ${following ? "bg-gray-200 group-hover:bg-gray-300" : "bg-blue-500 group-hover:bg-blue-600"}`}>
+                      <Icon name={following ? "UserCheck" : "UserPlus"} size={15} style={{ color: following ? "hsl(220,15%,35%)" : "white" }} />
+                    </div>
+                    <span style={{ fontSize: 10, color: "hsl(220,15%,50%)" }}>{following ? "Подписан" : "Подписаться"}</span>
+                  </button>
+                )}
+                {!blocked && !blockedByThem && onOpenChat && (
+                  <button onClick={() => onOpenChat(userId)} className="flex flex-col items-center gap-0.5 group">
+                    <div className="w-8 h-8 rounded-full flex items-center justify-center bg-gray-100 group-hover:bg-gray-200 transition-colors">
+                      <Icon name="MessageCircle" size={15} style={{ color: "hsl(213,80%,40%)" }} />
+                    </div>
+                    <span style={{ fontSize: 10, color: "hsl(220,15%,50%)" }}>Написать</span>
+                  </button>
+                )}
+                <button onClick={handleBlock} disabled={blockLoading} className="flex flex-col items-center gap-0.5 group">
+                  <div className={`w-8 h-8 rounded-full flex items-center justify-center transition-colors ${blocked ? "bg-red-500 group-hover:bg-red-600" : "bg-gray-100 group-hover:bg-red-50"}`}>
+                    <Icon name={blocked ? "ShieldCheck" : "ShieldOff"} size={15} style={{ color: blocked ? "white" : "hsl(0,72%,48%)" }} />
+                  </div>
+                  <span style={{ fontSize: 10, color: blocked ? "hsl(0,72%,48%)" : "hsl(220,15%,50%)" }}>{blockLoading ? "..." : blocked ? "Разблокировать" : "Блокировать"}</span>
+                </button>
+              </div>
+            )}
           </div>
-          {/* Кнопки действий — строго ниже обложки */}
-          {currentUser && !profile.is_me && (
-            <div className="flex gap-3 mb-3">
-              {!blocked && !blockedByThem && (
-                <button onClick={handleFollow} className="flex flex-col items-center gap-0.5 group">
-                  <div className={`w-8 h-8 rounded-full flex items-center justify-center transition-colors ${following ? "bg-gray-200 group-hover:bg-gray-300" : "bg-blue-500 group-hover:bg-blue-600"}`}>
-                    <Icon name={following ? "UserCheck" : "UserPlus"} size={15} style={{ color: following ? "hsl(220,15%,35%)" : "white" }} />
-                  </div>
-                  <span style={{ fontSize: 10, color: "hsl(220,15%,50%)" }}>{following ? "Подписан" : "Подписаться"}</span>
-                </button>
-              )}
-              {!blocked && !blockedByThem && onOpenChat && (
-                <button onClick={() => onOpenChat(userId)} className="flex flex-col items-center gap-0.5 group">
-                  <div className="w-8 h-8 rounded-full flex items-center justify-center bg-gray-100 group-hover:bg-gray-200 transition-colors">
-                    <Icon name="MessageCircle" size={15} style={{ color: "hsl(213,80%,40%)" }} />
-                  </div>
-                  <span style={{ fontSize: 10, color: "hsl(220,15%,50%)" }}>Написать</span>
-                </button>
-              )}
-              <button onClick={handleBlock} disabled={blockLoading} className="flex flex-col items-center gap-0.5 group">
-                <div className={`w-8 h-8 rounded-full flex items-center justify-center transition-colors ${blocked ? "bg-red-500 group-hover:bg-red-600" : "bg-gray-100 group-hover:bg-red-50"}`}>
-                  <Icon name={blocked ? "ShieldCheck" : "ShieldOff"} size={15} style={{ color: blocked ? "white" : "hsl(0,72%,48%)" }} />
-                </div>
-                <span style={{ fontSize: 10, color: blocked ? "hsl(0,72%,48%)" : "hsl(220,15%,50%)" }}>{blockLoading ? "..." : blocked ? "Разблокировать" : "Блокировать"}</span>
-              </button>
-            </div>
-          )}
 
           {/* Имя, должность, bio */}
           <h1 className="font-bold text-xl leading-tight">{profile.full_name}</h1>
@@ -2778,8 +2777,13 @@ function ProfilePage({ user, onUserUpdate, onOpenProfile, onStartChat, isAdmin }
 function AdminPage({ onOpenProfile }: { onOpenProfile?: (uid: number) => void } = {}) {
   const [data, setData] = useState<{ users: unknown[]; posts: unknown[]; stats: { total_users: number; total_posts: number; total_views: number } } | null>(null);
   const [loading, setLoading] = useState(true);
-  const [tab, setTab] = useState<"stats" | "users" | "posts">("stats");
+  const [tab, setTab] = useState<"stats" | "users" | "posts" | "groups" | "group_posts">("stats");
   const [userSearch, setUserSearch] = useState("");
+  const [groups, setGroups] = useState<{ id: number; name: string; description: string; members_count: number; posts_count: number; created_at: string; owner_name: string; owner_id: number }[]>([]);
+  const [groupsLoading, setGroupsLoading] = useState(false);
+  const [selectedGroup, setSelectedGroup] = useState<{ id: number; name: string } | null>(null);
+  const [groupPosts, setGroupPosts] = useState<{ id: number; text: string; created_at: string; author: string; user_id: number; likes_count: number; media_type: string }[]>([]);
+  const [groupPostsLoading, setGroupPostsLoading] = useState(false);
 
   useEffect(() => {
     apiPost(POSTS_URL, { action: "admin_data" }).then((r) => {
@@ -2787,6 +2791,25 @@ function AdminPage({ onOpenProfile }: { onOpenProfile?: (uid: number) => void } 
       setLoading(false);
     });
   }, []);
+
+  useEffect(() => {
+    if (tab === "groups" && groups.length === 0) {
+      setGroupsLoading(true);
+      apiPost(POSTS_URL, { action: "admin_groups" }).then((r) => {
+        if (r.ok) setGroups(r.data.groups);
+        setGroupsLoading(false);
+      });
+    }
+  }, [tab]);
+
+  const loadGroupPosts = async (group: { id: number; name: string }) => {
+    setSelectedGroup(group);
+    setTab("group_posts");
+    setGroupPostsLoading(true);
+    const r = await apiPost(POSTS_URL, { action: "admin_group_posts", group_id: group.id });
+    if (r.ok) setGroupPosts(r.data.posts);
+    setGroupPostsLoading(false);
+  };
 
   const deleteUser = async (uid: number, name: string) => {
     if (!confirm(`Удалить пользователя «${name}»? Все его посты тоже удалятся.`)) return;
@@ -2805,7 +2828,21 @@ function AdminPage({ onOpenProfile }: { onOpenProfile?: (uid: number) => void } 
     if (r.ok) setData((d) => d ? { ...d, users: d.users.map((u: unknown) => (u as { id: number }).id === uid ? { ...(u as object), is_admin: r.data.is_admin } : u) } : d);
   };
 
+  const deleteGroup = async (gid: number, name: string) => {
+    if (!confirm(`Удалить группу «${name}»? Все посты группы тоже удалятся.`)) return;
+    const r = await apiPost(POSTS_URL, { action: "admin_delete_group", group_id: gid });
+    if (r.ok) setGroups((gs) => gs.filter((g) => g.id !== gid));
+  };
+
+  const deleteGroupPost = async (pid: number) => {
+    if (!confirm("Удалить этот пост?")) return;
+    const r = await apiPost(POSTS_URL, { action: "admin_delete_group_post", post_id: pid });
+    if (r.ok) setGroupPosts((ps) => ps.filter((p) => p.id !== pid));
+  };
+
   if (loading) return <div className="max-w-4xl mx-auto px-4 py-10"><div className="h-20 rounded-lg shimmer" /></div>;
+
+  const tabLabels: Record<string, string> = { stats: "Статистика", users: "Пользователи", posts: "Посты", groups: "Группы" };
 
   return (
     <div className="max-w-4xl mx-auto px-4 py-5">
@@ -2817,9 +2854,9 @@ function AdminPage({ onOpenProfile }: { onOpenProfile?: (uid: number) => void } 
       </div>
 
       <div className="flex gap-2 mb-5 overflow-x-auto pb-1">
-        {(["stats", "users", "posts"] as const).map((t) => (
-          <button key={t} onClick={() => setTab(t)} className={`flex-shrink-0 ${tab === t ? "btn-primary text-xs px-4 py-2" : "btn-outline text-xs px-4 py-2"}`}>
-            {{ stats: "Статистика", users: "Пользователи", posts: "Посты" }[t]}
+        {(["stats", "users", "posts", "groups"] as const).map((t) => (
+          <button key={t} onClick={() => setTab(t)} className={`flex-shrink-0 ${tab === t || (tab === "group_posts" && t === "groups") ? "btn-primary text-xs px-4 py-2" : "btn-outline text-xs px-4 py-2"}`}>
+            {tabLabels[t]}
           </button>
         ))}
       </div>
@@ -2918,6 +2955,73 @@ function AdminPage({ onOpenProfile }: { onOpenProfile?: (uid: number) => void } 
                 </div>
               </div>
               <button className="text-xs px-2 py-1 rounded flex-shrink-0" style={{ background: "hsl(0,80%,95%)", color: "hsl(0,72%,45%)" }} onClick={() => deletePost(p.id)}>
+                <Icon name="Trash2" size={13} />
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {tab === "groups" && (
+        <div className="space-y-2">
+          {groupsLoading && <div className="h-16 rounded-lg shimmer" />}
+          {!groupsLoading && groups.length === 0 && <div className="post-card text-center py-8 text-sm" style={{ color: "hsl(220,15%,55%)" }}>Групп пока нет</div>}
+          {groups.map((g) => (
+            <div key={g.id} className="post-card flex items-start gap-3">
+              <div className="w-9 h-9 rounded-full flex-shrink-0 flex items-center justify-center" style={{ background: "hsl(213,80%,92%)" }}>
+                <Icon name="Users" size={15} style={{ color: "hsl(213,80%,40%)" }} />
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="font-medium text-sm">{g.name}</span>
+                  <span className="text-xs px-1.5 py-0.5 rounded" style={{ background: "hsl(213,80%,94%)", color: "hsl(213,80%,40%)" }}>{g.members_count} уч.</span>
+                  <span className="text-xs px-1.5 py-0.5 rounded" style={{ background: "hsl(142,70%,92%)", color: "hsl(142,70%,30%)" }}>{g.posts_count} постов</span>
+                </div>
+                {g.description && <p className="text-xs mt-0.5 truncate" style={{ color: "hsl(220,15%,55%)" }}>{g.description}</p>}
+                <button className="text-xs mt-0.5 hover:underline" style={{ color: "hsl(213,80%,40%)" }} onClick={() => onOpenProfile?.(g.owner_id)}>
+                  Владелец: {g.owner_name}
+                </button>
+              </div>
+              <div className="flex gap-1 flex-shrink-0">
+                <button title="Посты группы" className="p-1.5 rounded hover:bg-gray-100" style={{ color: "hsl(213,80%,40%)" }}
+                  onClick={() => loadGroupPosts(g)}>
+                  <Icon name="FileText" size={13} />
+                </button>
+                <button title="Удалить группу" className="p-1.5 rounded hover:bg-red-50" style={{ color: "hsl(0,72%,45%)" }}
+                  onClick={() => deleteGroup(g.id, g.name)}>
+                  <Icon name="Trash2" size={13} />
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {tab === "group_posts" && selectedGroup && (
+        <div className="space-y-2">
+          <div className="flex items-center gap-2 mb-3">
+            <button className="p-1.5 rounded hover:bg-gray-100" onClick={() => setTab("groups")}>
+              <Icon name="ArrowLeft" size={15} style={{ color: "hsl(213,80%,40%)" }} />
+            </button>
+            <span className="font-semibold text-sm">{selectedGroup.name}</span>
+            <span className="text-xs" style={{ color: "hsl(220,15%,55%)" }}>— посты группы</span>
+          </div>
+          {groupPostsLoading && <div className="h-16 rounded-lg shimmer" />}
+          {!groupPostsLoading && groupPosts.length === 0 && <div className="post-card text-center py-8 text-sm" style={{ color: "hsl(220,15%,55%)" }}>Постов пока нет</div>}
+          {groupPosts.map((p) => (
+            <div key={p.id} className="post-card flex items-start gap-3">
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2 mb-1 flex-wrap">
+                  <button className="font-medium text-xs hover:underline" style={{ color: "hsl(213,80%,40%)" }} onClick={() => onOpenProfile?.(p.user_id)}>{p.author}</button>
+                  <span className="text-xs" style={{ color: "hsl(220,15%,62%)" }}>{timeAgo(p.created_at)}</span>
+                  {p.media_type && <span className="text-xs px-1.5 py-0.5 rounded" style={{ background: "hsl(213,80%,94%)", color: "hsl(213,80%,40%)" }}>{p.media_type}</span>}
+                </div>
+                <p className="text-sm" style={{ color: "hsl(220,25%,22%)" }}>{p.text || "—"}</p>
+                <div className="flex gap-3 mt-1 text-xs" style={{ color: "hsl(220,15%,60%)" }}>
+                  <span className="flex items-center gap-1"><Icon name="Heart" size={11} />{p.likes_count}</span>
+                </div>
+              </div>
+              <button className="text-xs px-2 py-1 rounded flex-shrink-0" style={{ background: "hsl(0,80%,95%)", color: "hsl(0,72%,45%)" }} onClick={() => deleteGroupPost(p.id)}>
                 <Icon name="Trash2" size={13} />
               </button>
             </div>

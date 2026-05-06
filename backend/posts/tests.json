@@ -15,6 +15,22 @@
       "body": {"action": "create", "text": "Тест"},
       "expectedStatus": 401,
       "bodyMatcher": "partial"
+    },
+    {
+      "name": "Admin groups without auth",
+      "method": "POST",
+      "path": "/",
+      "body": {"action": "admin_groups"},
+      "expectedStatus": 401,
+      "bodyMatcher": "partial"
+    },
+    {
+      "name": "Admin delete group without auth",
+      "method": "POST",
+      "path": "/",
+      "body": {"action": "admin_delete_group", "group_id": 1},
+      "expectedStatus": 401,
+      "bodyMatcher": "partial"
     }
   ]
 }

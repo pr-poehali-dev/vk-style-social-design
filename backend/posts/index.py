@@ -302,6 +302,69 @@ def handler(event: dict, context) -> dict:
         conn.commit(); conn.close()
         return ok({"deleted": True})
 
+    # --- admin: список групп ---
+    if action == "admin_groups":
+        if not token: return err(401, "Не авторизован")
+        conn = get_conn(); cur = conn.cursor()
+        user = get_user_by_token(cur, token)
+        if not user or not user[3]: conn.close(); return err(403, "Нет доступа")
+        cur.execute(f"""SELECT g.id, g.name, g.description, g.members_count, g.posts_count, g.created_at,
+            u.full_name as owner_name, u.id as owner_id
+            FROM {SCHEMA}.groups g JOIN {SCHEMA}.users u ON u.id=g.owner_id
+            ORDER BY g.created_at DESC""")
+        groups = [{"id": r[0], "name": r[1], "description": (r[2] or "")[:60],
+            "members_count": r[3], "posts_count": r[4], "created_at": str(r[5]),
+            "owner_name": r[6], "owner_id": r[7]} for r in cur.fetchall()]
+        conn.close()
+        return ok({"groups": groups})
+
+    # --- admin: удалить группу ---
+    if action == "admin_delete_group":
+        if not token: return err(401, "Не авторизован")
+        group_id = body.get("group_id")
+        conn = get_conn(); cur = conn.cursor()
+        user = get_user_by_token(cur, token)
+        if not user or not user[3]: conn.close(); return err(403, "Нет доступа")
+        cur.execute(f"SELECT id FROM {SCHEMA}.group_posts WHERE group_id=%s", (group_id,))
+        gpost_ids = [r[0] for r in cur.fetchall()]
+        for gid in gpost_ids:
+            cur.execute(f"DELETE FROM {SCHEMA}.group_post_likes WHERE post_id=%s", (gid,))
+            cur.execute(f"DELETE FROM {SCHEMA}.group_post_comments WHERE post_id=%s", (gid,))
+        cur.execute(f"DELETE FROM {SCHEMA}.group_posts WHERE group_id=%s", (group_id,))
+        cur.execute(f"DELETE FROM {SCHEMA}.group_members WHERE group_id=%s", (group_id,))
+        cur.execute(f"DELETE FROM {SCHEMA}.groups WHERE id=%s", (group_id,))
+        conn.commit(); conn.close()
+        return ok({"deleted": True})
+
+    # --- admin: посты в группе ---
+    if action == "admin_group_posts":
+        if not token: return err(401, "Не авторизован")
+        group_id = body.get("group_id") or qs.get("group_id")
+        conn = get_conn(); cur = conn.cursor()
+        user = get_user_by_token(cur, token)
+        if not user or not user[3]: conn.close(); return err(403, "Нет доступа")
+        cur.execute(f"""SELECT gp.id, gp.text, gp.created_at, u.full_name, u.id as user_id,
+            gp.likes_count, gp.media_type
+            FROM {SCHEMA}.group_posts gp JOIN {SCHEMA}.users u ON u.id=gp.user_id
+            WHERE gp.group_id=%s ORDER BY gp.created_at DESC""", (group_id,))
+        posts = [{"id": r[0], "text": (r[1] or "")[:80], "created_at": str(r[2]),
+            "author": r[3], "user_id": r[4], "likes_count": r[5], "media_type": r[6] or ""} for r in cur.fetchall()]
+        conn.close()
+        return ok({"posts": posts})
+
+    # --- admin: удалить пост в группе ---
+    if action == "admin_delete_group_post":
+        if not token: return err(401, "Не авторизован")
+        post_id = body.get("post_id")
+        conn = get_conn(); cur = conn.cursor()
+        user = get_user_by_token(cur, token)
+        if not user or not user[3]: conn.close(); return err(403, "Нет доступа")
+        cur.execute(f"DELETE FROM {SCHEMA}.group_post_likes WHERE post_id=%s", (post_id,))
+        cur.execute(f"DELETE FROM {SCHEMA}.group_post_comments WHERE post_id=%s", (post_id,))
+        cur.execute(f"DELETE FROM {SCHEMA}.group_posts WHERE id=%s", (post_id,))
+        conn.commit(); conn.close()
+        return ok({"deleted": True})
+
     # --- get likes users (кто лайкнул пост) ---
     if action == "get_likes_users":
         post_id = body.get("post_id") or qs.get("post_id")
